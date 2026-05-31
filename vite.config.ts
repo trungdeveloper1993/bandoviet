@@ -5,6 +5,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // Base path for GitHub Pages (served from https://<user>.github.io/bandoviet/).
+    // Override with BASE_PATH env var (e.g. '/' for a custom domain or user/org page).
+    base: process.env.BASE_PATH ?? '/bandoviet/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
