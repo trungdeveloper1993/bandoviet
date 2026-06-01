@@ -1,5 +1,5 @@
 {
-  "name": "Hành Trình Việt",
+  "name": "Cảm ơn Nhé",
   "description": "Bản đồ lịch trình du lịch cá nhân và ghi chú hành trình khám phá danh thắng Việt Nam",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

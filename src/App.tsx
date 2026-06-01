@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Compass,
+  Smile,
   MapPin,
   Search,
   Plus,
@@ -362,12 +362,12 @@ export default function App() {
           {/* Logo Title */}
           <div className="flex items-center gap-3">
             <span className="p-3 bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105 transition duration-155 rounded-2xl shadow-md cursor-pointer flex items-center justify-center shrink-0">
-              <Compass className="w-5.5 h-5.5 shrink-0" />
+              <Smile className="w-5.5 h-5.5 shrink-0" />
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white uppercase font-sans">
-                  HÀNH TRÌNH VIỆT
+                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">
+                  Cảm ơn Nhé 😊
                 </h1>
                 <span className="bg-yellow-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider font-mono shadow-sm">
                   MAP CHINH PHỤC
@@ -730,7 +730,7 @@ export default function App() {
                 </tbody>
               </table>
               <div className="mt-8 text-[11px] text-slate-400 text-center font-mono select-none">
-                Cảm ơn bạn đã sử dụng Hành Trình Việt. Chúc bạn có những chặng đường tuyệt vời!
+                Cảm ơn bạn đã sử dụng Cảm ơn Nhé. Chúc bạn có những chặng đường tuyệt vời!
               </div>
             </div>
 
@@ -753,7 +753,7 @@ export default function App() {
           </div>
           
           <div className="mt-8 text-center text-[10px] text-slate-400 dark:text-slate-500 font-mono tracking-wide">
-            HÀNH TRÌNH VIỆT © 2026. KIẾN TẠO VỚI TỐI GIẢN & SỰ TIỆN LỢI CHI TIẾT.
+            CẢM ƠN NHÉ © 2026. KIẾN TẠO VỚI TỐI GIẢN & SỰ TIỆN LỢI CHI TIẾT.
           </div>
         </footer>
 

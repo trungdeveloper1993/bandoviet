@@ -100,7 +100,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
         {
           headers: {
             'Accept-Language': 'vi,en-US;q=0.9,en;q=0.8',
-            'User-Agent': 'HanhTrinhViet/1.0 (trungdeveloper1993@gmail.com)'
+            'User-Agent': 'CamOnNhe/1.0 (trungdeveloper1993@gmail.com)'
           }
         }
       );
