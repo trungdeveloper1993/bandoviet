@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=JetBrains+Mono:wght@450;600;700&display=swap');
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
@@ -8,8 +8,9 @@
 
 @layer base {
   :root {
-    --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-    --font-display: "Space Grotesk", sans-serif;
+    --font-retro: "Plus Jakarta Sans", sans-serif;
+    --font-sans: "Plus Jakarta Sans", sans-serif;
+    --font-display: "Plus Jakarta Sans", sans-serif;
     --font-mono: "JetBrains Mono", monospace;
   }
 }
@@ -17,6 +18,13 @@
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.dark body {
+  background-color: #090d16;
+  color: #f1f5f9;
 }
 
 h1, h2, h3, .font-display {
@@ -27,9 +35,93 @@ pre, code, .font-mono {
   font-family: var(--font-mono);
 }
 
+/* Redefined retro classes as modern layout presets to keep backwards compatibility */
+.retro-title {
+  font-family: var(--font-display) !important;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.retro-pixel-border {
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05) !important;
+  border-radius: 24px !important;
+}
+
+.dark .retro-pixel-border {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 15px 40px -10px rgba(0, 0, 0, 0.3) !important;
+}
+
+.retro-pixel-border-sm {
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.03) !important;
+  border-radius: 16px !important;
+}
+
+.dark .retro-pixel-border-sm {
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.25) !important;
+}
+
+.retro-btn {
+  border: none !important;
+  border-radius: 9999px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+}
+
+.retro-btn:hover {
+  transform: scale(1.02);
+}
+
+.retro-btn:active {
+  transform: scale(0.98) !important;
+}
+
+.retro-btn-sm {
+  border: none !important;
+  border-radius: 9999px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.retro-btn-sm:active {
+  transform: scale(0.95) !important;
+}
+
+.retro-input {
+  border: 1.5px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 14px !important;
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  transition: all 0.2s ease;
+}
+
+.retro-input:focus {
+  border-color: #4f46e5 !important;
+  background-color: #ffffff !important;
+}
+
+.dark .retro-input {
+  border: 1.5px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+}
+
+.dark .retro-input:focus {
+  border-color: #818cf8 !important;
+  background-color: #0f172a !important;
+}
+
+/* CRT scanlines disabled for clean modern Android design style */
+.retro-crt::after {
+  content: none !important;
+}
+
 /* Custom map CSS helper rules to avoid Leaflet broken icons */
 .leaflet-container {
-  font-family: var(--font-sans) !important;
+  font-family: "VT323", monospace !important;
+  image-rendering: auto !important;
 }
 
 /* Bulletproof styles to prevent tile misalignments and layout drift under Tailwind */

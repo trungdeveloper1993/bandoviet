@@ -315,24 +315,22 @@ export default function App() {
   const completedPercent = totalLocations > 0 ? Math.round((visitedLocations / totalLocations) * 105 / 105 * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-orange-50/10 text-slate-850 dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-100">
       
-      {/* Shared Itinerary Import Overlay Notification Banner */}
+      {/* Shared Itinerary Import Overlay Notification Banner - Material style */}
       <AnimatePresence>
         {sharedItineraryToImport && (
           <motion.div
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
-            className="fixed top-4 left-4 right-4 z-[99999] max-w-2xl mx-auto bg-indigo-600 dark:bg-indigo-700 text-white p-4 rounded-2xl shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 border border-indigo-400"
+            className="fixed top-4 left-4 right-4 z-[99999] max-w-2xl mx-auto bg-indigo-650 bg-indigo-600 text-white p-5 rounded-2xl border border-indigo-500 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4"
           >
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-white/10 rounded-xl">
-                <Compass className="w-6 h-6 animate-spin-slow text-white" />
-              </div>
+              <span className="text-lg">🧭</span>
               <div>
-                <h4 className="text-sm font-bold text-slate-50">Tìm Thấy Lịch Trình Thăm Quan Được Chia Sẻ!</h4>
-                <p className="text-xs text-indigo-100">
+                <h4 className="text-xs font-black uppercase text-yellow-300">PHÁT HIỆN LỊCH TRÌNH CHIA SẺ!</h4>
+                <p className="text-[10px] text-indigo-200 mt-0.5 font-sans">
                   Bạn nhận được danh sách gồm <b>{sharedItineraryToImport.length} địa danh</b> từ người quen. Bạn có muốn nhập danh sách này không?
                 </p>
               </div>
@@ -340,15 +338,15 @@ export default function App() {
             <div className="flex gap-2 shrink-0">
               <button
                 onClick={() => setSharedItineraryToImport(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-white/20 text-xs font-semibold text-white hover:bg-white/10 cursor-pointer transition"
+                className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold cursor-pointer transition"
               >
-                Bỏ qua
+                BỎ QUA
               </button>
               <button
                 onClick={handleConfirmImport}
-                className="px-4 py-1.5 rounded-lg bg-white text-indigo-700 hover:bg-slate-100 text-xs font-bold transition shadow-md cursor-pointer"
+                className="px-4 py-1.5 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-slate-950 text-[10px] font-bold cursor-pointer transition"
               >
-                Nhập Ngay
+                NHẬP NGAY
               </button>
             </div>
           </motion.div>
@@ -359,71 +357,71 @@ export default function App() {
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 space-y-8 print:p-0 print:max-w-full">
         
         {/* Navigation & Header Panel */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-150 pb-6 dark:border-slate-900 print:hidden select-none">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-6 print:hidden select-none">
           
           {/* Logo Title */}
           <div className="flex items-center gap-3">
-            <span className="p-3 bg-indigo-600 text-white dark:bg-indigo-505 dark:bg-indigo-600 rounded-2xl shadow-md shadow-indigo-500/10 hover:rotate-12 transition-transform duration-300">
-              <Compass className="w-7 h-7" />
+            <span className="p-3 bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105 transition duration-155 rounded-2xl shadow-md cursor-pointer flex items-center justify-center shrink-0">
+              <Compass className="w-5.5 h-5.5 shrink-0" />
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase font-display">
-                  Hành Trình Việt
+                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white uppercase font-sans">
+                  HÀNH TRÌNH VIỆT
                 </h1>
-                <span className="bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
-                  Bản Đồ Cá Nhân
+                <span className="bg-yellow-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider font-mono shadow-sm">
+                  MAP CHINH PHỤC
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ghim các điểm đến tuyệt mỹ, ghi lại những trải nghiệm và theo dõi tiến độ hành trình của bạn.
+              <p className="text-[10px] sm:text-xs text-slate-550 text-slate-550 text-slate-500 dark:text-slate-400 font-sans font-medium">
+                ✦ GHIM CÁC ĐỊA DANH KÝ ỨC, KHÁM PHÁ DANH LAM VIỆT NAM HOÀN TOÀN MIỄN PHÍ
               </p>
             </div>
           </div>
 
           {/* Action buttons on utility bar */}
-          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end">
+          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end font-sans">
             
             {/* Dark mode toggler button */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850 dark:text-slate-200 transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-750 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase cursor-pointer"
               title="Chuyển chế độ sáng/tối"
               id="theme-toggler"
             >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+              {isDarkMode ? '☀ Sáng' : '🌙 Tối'}
             </button>
 
             {/* Set sample default trigger buttons */}
             <button
               onClick={handleResetData}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850 dark:text-slate-350 transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-              title="Khôi phục lại dữ liệu mẫu chuẩn"
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:text-slate-350 text-slate-700 hover:text-indigo-600 dark:bg-slate-900 dark:hover:bg-slate-800 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+              title="Khôi phục lại dữ liệu mẫu"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">Khôi phục mẫu</span>
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-650 text-indigo-600 dark:text-indigo-405 text-indigo-600" />
+              <span>KHÔI PHỤC</span>
             </button>
 
             {/* Print out PDF */}
             <button
               onClick={handlePrintPDF}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850 dark:text-slate-200 transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-              title="Xuất lịch trình du lịch ra bản in PDF tiện lợi"
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+              title="Xuất bản in PDF"
               id="print-pdf-btn"
             >
               <Download className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Xuất PDF / In bản đồ</span>
+              <span>XUẤT PDF</span>
             </button>
 
             {/* Social Share triggered buttons */}
             <button
               onClick={handleOpenShare}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850 dark:text-slate-200 transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-              title="Chia sẻ lộ trình này với bạn bè"
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+              title="Chia sẻ lộ trình này"
               id="share-btn"
             >
-              <Share2 className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Chia sẻ</span>
+              <Share2 className="w-3.5 h-3.5 text-emerald-505 text-emerald-500" />
+              <span>CHIA SẺ</span>
             </button>
 
             {/* Master Add Location button */}
@@ -433,22 +431,22 @@ export default function App() {
                 setClickedLng(undefined);
                 setIsAddOpen(true);
               }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/10 cursor-pointer hover:shadow-indigo-600/20 active:scale-95 transition"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black flex items-center gap-1.5 rounded-full shadow-sm cursor-pointer active:scale-95 transition"
               id="master-add-location-btn"
             >
-              <Plus className="w-4 h-4" />
-              <span>Thêm địa điểm</span>
+              <Plus className="w-4 h-4 text-white shrink-0" />
+              <span>THÊM ĐỊA DANH</span>
             </button>
 
           </div>
         </header>
 
         {/* PRINT-ONLY HEADER BANNER FOR PDF */}
-        <div className="hidden print:block mb-8 text-center border-b-2 border-slate-300 pb-4">
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 uppercase font-display mb-1">
+        <div className="hidden print:block mb-8 text-center border-b-3 border-black pb-4">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase font-mono mb-1">
             BẢN ĐỒ HÀNH TRÌNH DU LỊCH CÁ NHÂN
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs text-slate-550 text-slate-500 font-mono">
             Tài liệu số hóa lưu trữ lịch trình danh lam thắng cảnh Việt Nam
           </p>
           <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600 font-mono">
@@ -459,73 +457,71 @@ export default function App() {
         </div>
 
         {/* Dashboard Statistics & Analytics Board */}
-        <section className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-150 dark:border-slate-800/80 shadow-sm print:hidden select-none">
+        <section className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-150 dark:border-slate-800/80 shadow-sm print:hidden select-none">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
             
             {/* Progress bar visual ring text */}
             <div className="md:col-span-2 flex items-center gap-4">
-              <div className="relative shrink-0 flex items-center justify-center">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">
-                  <Award className="w-8 h-8 text-amber-100 animate-pulse" />
-                </div>
+              <div className="relative shrink-0 flex items-center justify-center bg-yellow-105 bg-yellow-100 dark:bg-yellow-950/20 rounded-2xl p-3 text-yellow-700 shadow-sm">
+                <Award className="w-6 h-6 animate-pulse" />
               </div>
 
-              <div className="space-y-1.5 w-full">
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider block">Tiến độ khám phá của bạn</span>
+              <div className="space-y-1.5 w-full font-sans">
+                <span className="text-[8.5px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">📊 TIẾN ĐỘ CHINH PHỤC</span>
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
-                    Phần Trăm Chinh Phục: <span className="text-indigo-605 text-indigo-605 text-indigo-600 dark:text-indigo-400">{completedPercent}%</span>
+                  <h4 className="text-xs font-bold text-slate-850 dark:text-slate-100 uppercase">
+                    CHINH PHỤC: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{completedPercent}%</span>
                   </h4>
-                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                    {visitedLocations} / {totalLocations} địa điểm đã đi
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    {visitedLocations} / {totalLocations} HOÀN THÀNH
                   </span>
                 </div>
                 {/* Visual Progress bar container */}
-                <div className="w-full bg-slate-100 dark:bg-slate-820 h-2.5 rounded-full overflow-hidden border dark:border-slate-800">
+                <div className="w-full bg-slate-100 dark:bg-slate-850 h-3.5 rounded-full overflow-hidden relative border border-slate-150/20 dark:border-slate-800">
                   <motion.div
-                    className="h-full bg-indigo-600 dark:bg-indigo-550 dark:bg-indigo-500 rounded-full"
+                    className="h-full bg-emerald-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${completedPercent}%` }}
-                    transition={{ duration: 0.8 }}
+                    transition={{ duration: 0.3 }}
                   />
                 </div>
               </div>
             </div>
 
-            {/* Quick Stat badges details column 3 */}
-            <div className="grid grid-cols-2 gap-4 col-span-1 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800 md:pl-6 pt-4 md:pt-0">
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Chưa đến</span>
-                <p className="text-xl font-extrabold text-slate-900 dark:text-white font-mono flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span>
-                  <span>{totalLocations - visitedLocations}</span>
+            {/* Quick Stat badges details column 2 */}
+            <div className="grid grid-cols-2 gap-4 col-span-1 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800/80 md:pl-6 pt-4 md:pt-0 font-sans">
+              <div className="space-y-0.5">
+                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase block tracking-wider">ĐANG LÊN KẾ HOẠCH</span>
+                <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 uppercase">
+                  <span className="w-3.5 h-3.5 bg-yellow-405 bg-yellow-400 rounded-full inline-block shadow-sm"></span>
+                  <span>{totalLocations - visitedLocations} ĐIỂM</span>
                 </p>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Đã đi</span>
-                <p className="text-xl font-extrabold text-slate-950 dark:text-white font-mono flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
-                  <span>{visitedLocations}</span>
+              <div className="space-y-0.5">
+                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase block tracking-wider">ĐÃ ĐẶT CHÂN ĐẾN</span>
+                <p className="text-xs font-bold text-slate-950 dark:text-white flex items-center gap-1.5 uppercase">
+                  <span className="w-3.5 h-3.5 bg-emerald-500 rounded-full inline-block shadow-sm"></span>
+                  <span>{visitedLocations} ĐIỂM</span>
                 </p>
               </div>
             </div>
 
-            {/* Quick cleaning action panel column 4 */}
-            <div className="flex flex-col items-stretch justify-center md:items-end col-span-1 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800 md:pl-6">
-              <div className="space-y-2 w-full max-w-[200px] md:max-w-none md:text-right">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Xử lý hành trình</span>
+            {/* Quick cleaning action panel column 3 */}
+            <div className="flex flex-col items-stretch justify-center md:items-end col-span-1 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800/80 md:pl-6">
+              <div className="space-y-1.5 w-full md:text-right font-sans">
+                <span className="text-[8px] text-slate-450 dark:text-slate-500 font-black uppercase tracking-wider block">CÔNG CỤ NỔI BẬT</span>
                 
                 {/* "Clear checked" button to delete ALL items that are visited */}
                 <button
                   onClick={handleClearVisited}
                   disabled={visitedLocations === 0}
-                  className="w-full flex items-center justify-center md:justify-end gap-1.5 px-3 py-2 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 dark:text-rose-400 hover:bg-rose-100 text-[11px] font-extrabold rounded-xl border border-rose-100 dark:border-rose-900/30 transition disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-rose-50/80 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-500 text-[10px] font-extrabold uppercase rounded-full cursor-pointer disabled:opacity-45 disabled:pointer-events-none transition shadow-sm"
                   title="Dọn dẹp và xóa các điểm đã hoàn thành chuyến đi"
                   id="clear-visited-btn"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Xóa Đã Hoàn Thành ({visitedLocations})</span>
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>XÓA ĐIỂM ĐÃ ĐI ({visitedLocations})</span>
                 </button>
               </div>
             </div>
@@ -537,29 +533,29 @@ export default function App() {
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           {/* LEFT PANEL COLUMN (Map Widget Box) */}
-          <div className="lg:col-span-5 space-y-6 print:hidden">
+          <div className="lg:col-span-12 xl:col-span-12 space-y-6 print:hidden">
             
             {/* Live active Leaflet map box widget with Google layer */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 p-4 rounded-3xl shadow-sm space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-100 select-none">
-                <span className="flex items-center gap-1.5">
-                  <MapIcon className="w-4 h-4 text-indigo-500" />
-                  Bản Đồ Định Vị Địa Điểm
+            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-4 rounded-3xl shadow-sm space-y-4">
+              <div className="flex items-center justify-between text-[11px] font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest select-none font-mono">
+                <span className="flex items-center gap-1.5 font-sans">
+                  <MapIcon className="w-4 h-4 text-indigo-600" />
+                  BẢN ĐỒ VIỆT NAM (TỔNG HỢP GỢI Ý REALTIME)
                 </span>
                 {selectedLocation && (
                   <button
                     onClick={() => {
                       setSelectedLocation(null);
                     }}
-                    className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 select-none cursor-pointer font-bold"
+                    className="text-[9px] font-bold border border-slate-205 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition"
                   >
-                    Thu nhỏ tiêu cự
+                    [-] TIÊU CỰ CHUNG
                   </button>
                 )}
               </div>
 
               {/* Subdued message box helper */}
-              <div className="h-[380px] md:h-[480px]">
+              <div className="h-[380px] md:h-[480px] rounded-2xl overflow-hidden relative border border-slate-100 dark:border-slate-800/60 shadow-inner">
                 <TravelMap
                   locations={filteredLocations}
                   selectedLocation={selectedLocation}
@@ -575,36 +571,36 @@ export default function App() {
                 />
               </div>
 
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight text-center select-none pt-1">
-                📌 Nhấp chuột lên bản đồ (hoặc nhấp đúp) để lấy vĩ độ/kinh độ đưa trực tiếp vào địa danh mới của riêng bạn!
+              <span className="text-[8.5px] text-slate-450 dark:text-slate-550 dark:text-slate-500 block leading-tight text-center select-none uppercase font-semibold font-mono tracking-wider">
+                📌 CLICK VÀO BẤT CỨ ĐIỂM NÀO TRÊN BẢN ĐỒ ĐỂ DÒ TÌM, GỢI Ý VÀ GHIM HOÀN TOÀN TỰ ĐỘNG!
               </span>
             </div>
 
           </div>
 
           {/* RIGHT PANEL COLUMN (Filtered search bar and Locations List grid) */}
-          <div className="lg:col-span-7 space-y-6 print:col-span-12">
+          <div className="lg:col-span-12 xl:col-span-12 space-y-6 print:col-span-12">
             
             {/* Filter and search bar controls header */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-4 sm:p-5 rounded-3xl shadow-sm space-y-4 print:hidden select-none">
+            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-5 rounded-3xl shadow-sm space-y-4 print:hidden select-none">
               
               {/* Region and Area selection filtering (bộ lọc theo khu vực) */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  <Filter className="w-3.5 h-3.5 text-indigo-550 text-indigo-500" />
-                  <span>Lọc thắng cảnh theo vùng miền:</span>
+              <div className="space-y-1.5">
+                <label className="text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">
+                  <Filter className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>BỘ LỌC KHU VỰC ĐỊA LÝ:</span>
                 </label>
                 
                 {/* Horizontal chips selection list */}
-                <div className="flex flex-wrap gap-2.5 pt-1">
+                <div className="flex flex-wrap gap-2 pt-0.5">
                   {(['Tất cả', 'Miền Bắc', 'Miền Trung', 'Miền Nam', 'Nước ngoài'] as Region[]).map(reg => (
                     <button
                       key={reg}
                       onClick={() => setRegionFilter(reg)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition ${
+                      className={`px-3.5 py-1.5 transition text-[10.5px] uppercase font-bold rounded-full cursor-pointer ${
                         regionFilter === reg
-                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/10'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 dark:bg-slate-850 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer'
+                          ? 'bg-indigo-650 bg-indigo-600 text-white shadow-sm font-extrabold'
+                          : 'bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                       }`}
                       id={`filter-${reg}`}
                     >
@@ -615,37 +611,38 @@ export default function App() {
               </div>
 
               {/* Keyword text search box */}
-              <div>
+              <div className="space-y-1.5">
+                <label className="text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">
+                  <Search className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>TÌM KIẾM THEO TÊN (HỖ TRỢ KHÔNG DẤU):</span>
+                </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-3 text-slate-400">
-                    <Search className="w-4.5 h-4.5" />
-                  </span>
                   <input
                     type="text"
-                    placeholder="Tìm kiếm nhanh danh thắng hoặc ghi chú cá nhân của bạn (hỗ trợ gõ không dấu)..."
+                    placeholder="Gõ nhanh tên danh thắng hoặc nội dung ghi chú để tra cứu..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 dark:bg-slate-900 dark:border-slate-800 dark:text-white transition-all text-xs"
+                    className="w-full px-4.5 px-4 py-2.5 rounded-full border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-850 dark:text-white text-xs font-semibold bg-slate-50 transition"
                   />
                   {searchTerm && (
                     <button
                       onClick={() => setSearchTerm('')}
-                      className="absolute right-3.5 top-3 text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-705 px-1.5 py-0.5 rounded cursor-pointer font-bold text-slate-500"
+                      className="absolute right-3.5 top-2 py-1 px-3 text-[9px] font-black bg-rose-50 hover:bg-rose-100 text-rose-500 hover:text-rose-600 dark:bg-rose-950/20 rounded-full cursor-pointer transition uppercase"
                     >
-                      Xóa
+                      XÓA
                     </button>
                   )}
                 </div>
               </div>
               
               {/* Highlight statistics metrics of current filters search results */}
-              <div className="flex items-center justify-between text-[11px] text-slate-450 dark:text-slate-500">
+              <div className="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-wider uppercase">
                 <span>
-                  Kết quả hiển thị: <b>{filteredLocations.length}</b> địa chỉ / <b>{totalLocations}</b> tổng
+                  ĐANG HIỂN THỊ: <b>{filteredLocations.length}</b> ĐỊA DANH / <b>{totalLocations}</b> TỔNG SỐ
                 </span>
                 {selectedLocation && (
                   <span>
-                    Đang chọn: <b>{selectedLocation.name.split(',')[0]}</b>
+                    MỤC TIÊU PIN: <b>{selectedLocation.name.toUpperCase()}</b>
                   </span>
                 )}
               </div>
