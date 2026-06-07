@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
-import { Search, Loader2, X, MapPin, Sparkles } from 'lucide-react';
+import { Search, Loader2, X, MapPin, Sparkles, Navigation, Clock } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { TravelLocation } from '../types';
 
@@ -23,6 +23,96 @@ function removeTones(str: string): string {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+// Haversine distance in meters between two coordinates
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Human friendly distance/duration formatting (Vietnamese)
+function formatDistance(m: number): string {
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+}
+
+function formatDuration(s: number): string {
+  const mins = Math.round(s / 60);
+  if (mins < 1) return 'dưới 1 phút';
+  if (mins < 60) return `${mins} phút`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h} giờ ${m} phút` : `${h} giờ`;
+}
+
+const MODIFIER_VI: Record<string, string> = {
+  left: 'trái',
+  right: 'phải',
+  'slight left': 'chếch trái',
+  'slight right': 'chếch phải',
+  'sharp left': 'gắt sang trái',
+  'sharp right': 'gắt sang phải',
+  straight: 'thẳng',
+  uturn: 'quay đầu xe',
+};
+
+// Build a short Vietnamese turn-by-turn instruction from an OSRM step
+function translateStep(step: any): string {
+  const type = step?.maneuver?.type;
+  const mod = step?.maneuver?.modifier;
+  const road = step?.name ? ` vào ${step.name}` : '';
+  switch (type) {
+    case 'depart':
+      return `Xuất phát${road}`;
+    case 'arrive':
+      return 'Đã đến nơi 🎉';
+    case 'turn':
+      return `Rẽ ${MODIFIER_VI[mod] || ''}`.trim() + road;
+    case 'continue':
+      return `Đi tiếp${road}`;
+    case 'merge':
+      return `Nhập làn${road}`;
+    case 'on ramp':
+      return `Vào đường nhánh${road}`;
+    case 'off ramp':
+      return `Ra khỏi đường nhánh${road}`;
+    case 'fork':
+      return `Tại ngã rẽ đi ${MODIFIER_VI[mod] || 'thẳng'}${road}`;
+    case 'end of road':
+      return `Cuối đường, rẽ ${MODIFIER_VI[mod] || ''}`.trim() + road;
+    case 'roundabout':
+    case 'rotary':
+      return `Đi vào vòng xuyến${road}`;
+    case 'new name':
+      return `Tiếp tục${road}`;
+    default:
+      return `Tiếp tục${road}`;
+  }
+}
+
+function stepEmoji(step: any): string {
+  const type = step?.maneuver?.type;
+  const mod: string = step?.maneuver?.modifier || '';
+  if (type === 'depart') return '📍';
+  if (type === 'arrive') return '🏁';
+  if (type === 'roundabout' || type === 'rotary') return '🔄';
+  if (mod === 'uturn') return '↩️';
+  if (mod.includes('left')) return '⬅️';
+  if (mod.includes('right')) return '➡️';
+  return '⬆️';
+}
+
+interface RouteInfo {
+  distance: number;
+  duration: number;
+  steps: any[];
+}
+
 interface TravelMapProps {
   locations: TravelLocation[];
   selectedLocation: TravelLocation | null;
@@ -32,6 +122,8 @@ interface TravelMapProps {
   userLat?: number;
   userLng?: number;
   mapPanTrigger?: { lat: number; lng: number; timestamp: number } | null;
+  navTarget?: TravelLocation | null;
+  onStopNavigation?: () => void;
 }
 
 export const TravelMap: React.FC<TravelMapProps> = ({
@@ -43,6 +135,8 @@ export const TravelMap: React.FC<TravelMapProps> = ({
   userLat,
   userLng,
   mapPanTrigger,
+  navTarget,
+  onStopNavigation,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +145,16 @@ export const TravelMap: React.FC<TravelMapProps> = ({
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const tempMarkerRef = useRef<L.Marker | null>(null);
+
+  // Realtime navigation / routing refs & state
+  const routeLayerRef = useRef<L.Polyline | null>(null);
+  const routeCasingRef = useRef<L.Polyline | null>(null);
+  const navMarkerRef = useRef<L.Marker | null>(null);
+  const lastRoutedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const activeNavIdRef = useRef<string | null>(null);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   // Set default map type: roadmap, hybrid satellite, or dark mode
   const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'dark'>(isDarkMode ? 'dark' : 'roadmap');
@@ -316,6 +420,143 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     }
   }, [userLat, userLng]);
 
+  // Realtime turn-by-turn routing: draw the road route from the live GPS
+  // position to the navigation target and refresh it as the user moves.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const clearRoute = () => {
+      routeLayerRef.current?.remove();
+      routeCasingRef.current?.remove();
+      navMarkerRef.current?.remove();
+      routeLayerRef.current = null;
+      routeCasingRef.current = null;
+      navMarkerRef.current = null;
+    };
+
+    // Navigation turned off → wipe everything
+    if (!navTarget) {
+      clearRoute();
+      lastRoutedRef.current = null;
+      activeNavIdRef.current = null;
+      setRouteInfo(null);
+      setRouteError(null);
+      setRouteLoading(false);
+      return;
+    }
+
+    const isNewTarget = activeNavIdRef.current !== navTarget.id;
+
+    // Drop a destination flag once per target
+    if (isNewTarget) {
+      navMarkerRef.current?.remove();
+      const destIcon = L.divIcon({
+        className: 'nav-dest-icon',
+        html: `
+          <div class="relative flex items-center justify-center">
+            <span class="absolute inline-flex h-9 w-9 rounded-full bg-indigo-500/30 animate-ping"></span>
+            <div class="h-7 w-7 rounded-full bg-indigo-600 border-2 border-white shadow-xl flex items-center justify-center text-sm">🏁</div>
+          </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+      navMarkerRef.current = L.marker([navTarget.lat, navTarget.lng], {
+        icon: destIcon,
+        zIndexOffset: 1000,
+      }).addTo(map);
+      activeNavIdRef.current = navTarget.id;
+      lastRoutedRef.current = null;
+      setRouteInfo(null);
+      setRouteError(null);
+    }
+
+    // Need a live GPS fix to compute the route
+    if (userLat === undefined || userLng === undefined) {
+      setRouteError('Đang chờ tín hiệu GPS — hãy bật định vị để xem chỉ đường.');
+      return;
+    }
+
+    // Throttle: skip re-routing for tiny movements (< 25m)
+    const moved = lastRoutedRef.current
+      ? distanceMeters(lastRoutedRef.current.lat, lastRoutedRef.current.lng, userLat, userLng)
+      : Infinity;
+    if (!isNewTarget && moved < 25 && routeLayerRef.current) return;
+
+    const firstForTarget = lastRoutedRef.current === null;
+    let cancelled = false;
+
+    const fetchRoute = async () => {
+      setRouteLoading(true);
+      setRouteError(null);
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${navTarget.lng},${navTarget.lat}?overview=full&geometries=geojson&steps=true`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('routing failed');
+        const data = await resp.json();
+        if (cancelled) return;
+        if (!data.routes || !data.routes.length) throw new Error('no route');
+
+        const route = data.routes[0];
+        const latlngs: [number, number][] = route.geometry.coordinates.map(
+          (c: number[]) => [c[1], c[0]]
+        );
+
+        // Redraw the route (casing underneath + colored line on top)
+        routeLayerRef.current?.remove();
+        routeCasingRef.current?.remove();
+        routeCasingRef.current = L.polyline(latlngs, {
+          color: '#ffffff',
+          weight: 9,
+          opacity: 0.9,
+          lineJoin: 'round',
+          lineCap: 'round',
+        }).addTo(map);
+        routeLayerRef.current = L.polyline(latlngs, {
+          color: '#4f46e5',
+          weight: 5,
+          opacity: 0.95,
+          lineJoin: 'round',
+          lineCap: 'round',
+        }).addTo(map);
+
+        // Frame both endpoints only when navigation first starts
+        if (firstForTarget) {
+          map.fitBounds(routeLayerRef.current.getBounds(), {
+            padding: [60, 60],
+            maxZoom: 16,
+          });
+        }
+
+        lastRoutedRef.current = { lat: userLat, lng: userLng };
+        setRouteInfo({
+          distance: route.distance,
+          duration: route.duration,
+          steps: route.legs?.[0]?.steps || [],
+        });
+      } catch (e) {
+        if (!cancelled) {
+          setRouteError('Không lấy được tuyến đường lúc này. Bạn có thể mở Google Maps bên dưới.');
+        }
+      } finally {
+        if (!cancelled) setRouteLoading(false);
+      }
+    };
+
+    fetchRoute();
+    return () => {
+      cancelled = true;
+    };
+  }, [navTarget, userLat, userLng]);
+
+  // Build a Google Maps directions deep-link as a full turn-by-turn fallback
+  const googleMapsUrl = navTarget
+    ? `https://www.google.com/maps/dir/?api=1&${
+        userLat !== undefined && userLng !== undefined ? `origin=${userLat},${userLng}&` : ''
+      }destination=${navTarget.lat},${navTarget.lng}&travelmode=driving`
+    : '#';
+
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-inner border border-slate-200/80 dark:border-slate-800/80 select-none">
       <div ref={mapContainerRef} className="w-full h-full min-h-[350px] md:min-h-[450px]" />
@@ -551,9 +792,91 @@ export const TravelMap: React.FC<TravelMapProps> = ({
         )}
       </div>
       
-      <div className="absolute bottom-3 right-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-md px-2.5 py-1.4 rounded-md text-[9px] text-slate-500 dark:text-slate-400 z-[1000] border border-slate-100 dark:border-slate-800 pointer-events-none select-none transition-colors duration-300">
-        💡 Click bản đồ để ghim tọa độ mới!
-      </div>
+      {!navTarget && (
+        <div className="absolute bottom-3 right-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-md px-2.5 py-1.4 rounded-md text-[9px] text-slate-500 dark:text-slate-400 z-[1000] border border-slate-100 dark:border-slate-800 pointer-events-none select-none transition-colors duration-300">
+          💡 Click bản đồ để ghim tọa độ mới!
+        </div>
+      )}
+
+      {/* Realtime navigation bottom sheet (Google-Maps style directions) */}
+      {navTarget && (
+        <div className="absolute bottom-0 left-0 right-0 z-[1002] p-2.5 sm:p-3">
+          <div className="bg-white/97 dark:bg-slate-900/97 backdrop-blur rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {/* Header: destination + live summary */}
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-indigo-600 text-white">
+              <span className="shrink-0 w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
+                <Navigation className="w-4 h-4" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-extrabold truncate leading-tight">
+                  Chỉ đường tới {navTarget.name.split(',')[0]}
+                </div>
+                <div className="text-[10px] opacity-90 leading-tight mt-0.5">
+                  {routeInfo ? (
+                    <span className="inline-flex items-center gap-2 font-mono font-bold">
+                      <span>🚗 {formatDistance(routeInfo.distance)}</span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <Clock className="w-2.5 h-2.5" /> {formatDuration(routeInfo.duration)}
+                      </span>
+                    </span>
+                  ) : routeLoading ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Đang tính tuyến đường...
+                    </span>
+                  ) : (
+                    <span>Đang chuẩn bị chỉ đường...</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => onStopNavigation?.()}
+                className="shrink-0 w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition cursor-pointer"
+                title="Kết thúc chỉ đường"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Turn-by-turn steps */}
+            {routeError ? (
+              <div className="px-3 py-2.5 text-[10.5px] text-rose-500 dark:text-rose-400 font-medium">
+                {routeError}
+              </div>
+            ) : routeInfo && routeInfo.steps.length > 0 ? (
+              <div className="max-h-32 sm:max-h-40 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800/60">
+                {routeInfo.steps.map((step, idx) => (
+                  <div key={idx} className="flex items-center gap-2.5 px-3 py-1.5">
+                    <span className="shrink-0 text-sm leading-none">{stepEmoji(step)}</span>
+                    <span className="flex-1 text-[10.5px] text-slate-700 dark:text-slate-200 truncate font-medium">
+                      {translateStep(step)}
+                    </span>
+                    {step.distance > 0 && (
+                      <span className="shrink-0 text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                        {formatDistance(step.distance)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-3 py-2.5 text-[10.5px] text-slate-400 dark:text-slate-500">
+                {routeLoading ? 'Đang tải hướng dẫn từng chặng...' : 'Chưa có dữ liệu chỉ đường.'}
+              </div>
+            )}
+
+            {/* Google Maps full navigation fallback */}
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider border-t border-slate-100 dark:border-slate-800 transition cursor-pointer"
+            >
+              <Navigation className="w-3 h-3" />
+              Mở điều hướng Google Maps
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Calendar, Trash2, CheckCircle2, Circle, Edit3, Check, X, FileText } from 'lucide-react';
+import { MapPin, Calendar, Trash2, CheckCircle2, Circle, Edit3, Check, X, FileText, Navigation } from 'lucide-react';
 import { TravelLocation } from '../types';
 
 interface LocationCardProps {
   location: TravelLocation;
   isSelected: boolean;
   onSelect: () => void;
+  onNavigate?: () => void;
   onToggleVisited: () => void;
   onDelete: () => void;
   onUpdateNotes: (notes: string) => void;
@@ -16,6 +17,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   location,
   isSelected,
   onSelect,
+  onNavigate,
   onToggleVisited,
   onDelete,
   onUpdateNotes,
@@ -187,15 +189,22 @@ export const LocationCard: React.FC<LocationCardProps> = ({
         {/* Footer actions - flat material design */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-805/60 dark:border-slate-800/40 flex items-center justify-between gap-1 shrink-0 select-none">
           <button
-            onClick={onSelect}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onNavigate) {
+                onNavigate();
+              } else {
+                onSelect();
+              }
+            }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer ${
               isSelected
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
             }`}
-            title="Định vị địa điểm"
+            title="Chỉ đường realtime từ vị trí của bạn tới đây"
           >
-            <MapPin className="w-2.5 h-2.5" />
+            <Navigation className="w-2.5 h-2.5" />
             <span>Bay tới</span>
           </button>
 

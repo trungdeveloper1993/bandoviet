@@ -67,6 +67,9 @@ export default function App() {
   });
 
   const [selectedLocation, setSelectedLocation] = useState<TravelLocation | null>(null);
+
+  // Active realtime navigation target (the place to route to)
+  const [navTarget, setNavTarget] = useState<TravelLocation | null>(null);
   const [regionFilter, setRegionFilter] = useState<Region>('Tất cả');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -122,19 +125,20 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Request browser Geolocation API permissions and retrieve coordinates dynamically
+  // Continuously track the user's GPS position (realtime) for live navigation
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLat(position.coords.latitude);
-          setUserLng(position.coords.longitude);
-        },
-        (error) => {
-          console.warn("Quyền định vị bị tắt hoặc xảy ra lỗi GPS: ", error);
-        }
-      );
-    }
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setUserLat(position.coords.latitude);
+        setUserLng(position.coords.longitude);
+      },
+      (error) => {
+        console.warn("Quyền định vị bị tắt hoặc xảy ra lỗi GPS: ", error);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   // Detect and import shared itinerary query strings (?itinerary=base64)
@@ -211,6 +215,9 @@ export default function App() {
         setLocations(prev => prev.filter(loc => loc.id !== id));
         if (selectedLocation?.id === id) {
           setSelectedLocation(null);
+        }
+        if (navTarget?.id === id) {
+          setNavTarget(null);
         }
         setConfirmDialog(null);
       }
@@ -568,6 +575,8 @@ export default function App() {
                   userLat={userLat}
                   userLng={userLng}
                   mapPanTrigger={mapPanTrigger}
+                  navTarget={navTarget}
+                  onStopNavigation={() => setNavTarget(null)}
                 />
               </div>
 
@@ -661,6 +670,10 @@ export default function App() {
                       onSelect={() => {
                         setSelectedLocation(loc);
                         setMapPanTrigger({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() });
+                      }}
+                      onNavigate={() => {
+                        setSelectedLocation(loc);
+                        setNavTarget(loc);
                       }}
                       onToggleVisited={() => handleToggleVisited(loc.id)}
                       onDelete={() => handleDeleteLocation(loc.id)}
