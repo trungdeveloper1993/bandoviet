@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
-import { Search, Loader2, X, MapPin, Sparkles, Navigation, Clock } from 'lucide-react';
+import { Search, Loader2, X, MapPin, Sparkles, Navigation, Clock, Minus, ChevronUp } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { TravelLocation } from '../types';
 
@@ -155,6 +155,12 @@ export const TravelMap: React.FC<TravelMapProps> = ({
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+
+  // Always re-open the panel when navigation starts on a new target
+  useEffect(() => {
+    setNavCollapsed(false);
+  }, [navTarget?.id]);
 
   // Set default map type: roadmap, hybrid satellite, or dark mode
   const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'dark'>(isDarkMode ? 'dark' : 'roadmap');
@@ -798,8 +804,34 @@ export const TravelMap: React.FC<TravelMapProps> = ({
         </div>
       )}
 
+      {/* Collapsed navigation pill — keeps the map fully visible */}
+      {navTarget && navCollapsed && (
+        <div className="absolute bottom-3 left-3 z-[1002] flex items-center gap-1 bg-indigo-600 text-white rounded-full shadow-2xl border border-white/20 pl-1 pr-1 py-1">
+          <button
+            onClick={() => setNavCollapsed(false)}
+            className="flex items-center gap-2 pl-2 pr-1 py-0.5 cursor-pointer"
+            title="Mở lại bảng chỉ đường"
+          >
+            <Navigation className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[11px] font-bold font-mono whitespace-nowrap">
+              {routeInfo
+                ? `${formatDistance(routeInfo.distance)} · ${formatDuration(routeInfo.duration)}`
+                : 'Chỉ đường'}
+            </span>
+            <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+          </button>
+          <button
+            onClick={() => onStopNavigation?.()}
+            className="w-6 h-6 rounded-full hover:bg-white/25 flex items-center justify-center transition cursor-pointer shrink-0"
+            title="Kết thúc chỉ đường"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
       {/* Realtime navigation bottom sheet (Google-Maps style directions) */}
-      {navTarget && (
+      {navTarget && !navCollapsed && (
         <div className="absolute bottom-0 left-0 right-0 z-[1002] p-2.5 sm:p-3">
           <div className="bg-white/97 dark:bg-slate-900/97 backdrop-blur rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             {/* Header: destination + live summary */}
@@ -828,6 +860,13 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                   )}
                 </div>
               </div>
+              <button
+                onClick={() => setNavCollapsed(true)}
+                className="shrink-0 w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition cursor-pointer"
+                title="Thu gọn bảng (chỉ xem bản đồ)"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
               <button
                 onClick={() => onStopNavigation?.()}
                 className="shrink-0 w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition cursor-pointer"
