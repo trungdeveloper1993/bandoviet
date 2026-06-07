@@ -15,7 +15,9 @@ import {
   Sparkles,
   Award,
   Filter,
-  AlertCircle
+  AlertCircle,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TravelLocation, Region } from './types';
 import { DEFAULT_LOCATIONS } from './data/defaultLocations';
@@ -70,6 +72,9 @@ export default function App() {
 
   // Active realtime navigation target (the place to route to)
   const [navTarget, setNavTarget] = useState<TravelLocation | null>(null);
+
+  // Fullscreen map mode (useful on small devices)
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [regionFilter, setRegionFilter] = useState<Region>('Tất cả');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -140,6 +145,16 @@ export default function App() {
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
+
+  // Allow ESC to exit fullscreen map mode
+  useEffect(() => {
+    if (!isMapFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMapFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMapFullscreen]);
 
   // Detect and import shared itinerary query strings (?itinerary=base64)
   useEffect(() => {
@@ -549,20 +564,44 @@ export default function App() {
                   <MapIcon className="w-4 h-4 text-indigo-600" />
                   BẢN ĐỒ VIỆT NAM (TỔNG HỢP GỢI Ý REALTIME)
                 </span>
-                {selectedLocation && (
+                <div className="flex items-center gap-1.5">
+                  {selectedLocation && (
+                    <button
+                      onClick={() => {
+                        setSelectedLocation(null);
+                      }}
+                      className="text-[9px] font-bold border border-slate-205 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition"
+                    >
+                      [-] TIÊU CỰ CHUNG
+                    </button>
+                  )}
                   <button
-                    onClick={() => {
-                      setSelectedLocation(null);
-                    }}
-                    className="text-[9px] font-bold border border-slate-205 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition"
+                    onClick={() => setIsMapFullscreen(true)}
+                    className="flex items-center gap-1 text-[9px] font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition hover:bg-slate-100 dark:hover:bg-slate-700"
+                    title="Phóng to bản đồ toàn màn hình"
                   >
-                    [-] TIÊU CỰ CHUNG
+                    <Maximize2 className="w-3 h-3" /> Toàn màn hình
                   </button>
-                )}
+                </div>
               </div>
 
               {/* Subdued message box helper */}
-              <div className="h-[380px] md:h-[480px] rounded-2xl overflow-hidden relative border border-slate-100 dark:border-slate-800/60 shadow-inner">
+              <div
+                className={
+                  isMapFullscreen
+                    ? 'fixed inset-0 z-[9999] overflow-hidden bg-white dark:bg-slate-950'
+                    : 'h-[380px] md:h-[480px] rounded-2xl overflow-hidden relative border border-slate-100 dark:border-slate-800/60 shadow-inner'
+                }
+              >
+                {isMapFullscreen && (
+                  <button
+                    onClick={() => setIsMapFullscreen(false)}
+                    className="absolute top-3 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-900 text-white px-3.5 py-1.5 rounded-full shadow-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition backdrop-blur"
+                    title="Thu nhỏ bản đồ (ESC)"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" /> Thu nhỏ bản đồ
+                  </button>
+                )}
                 <TravelMap
                   locations={filteredLocations}
                   selectedLocation={selectedLocation}
