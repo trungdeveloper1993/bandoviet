@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Smile,
@@ -17,7 +17,9 @@ import {
   Filter,
   AlertCircle,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Save,
+  Upload
 } from 'lucide-react';
 import { TravelLocation, Region } from './types';
 import { DEFAULT_LOCATIONS } from './data/defaultLocations';
@@ -25,6 +27,58 @@ import TravelMap from './components/TravelMap';
 import AddLocationModal from './components/AddLocationModal';
 import LocationCard from './components/LocationCard';
 import ShareModal from './components/ShareModal';
+
+// CSV column order used for import/export of the itinerary
+const CSV_HEADERS = [
+  'name', 'region', 'lat', 'lng', 'visited', 'notes', 'plannedDate', 'image', 'id', 'createdAt',
+];
+
+// Quote a value for safe CSV output
+function csvEscape(value: unknown): string {
+  const s = value === undefined || value === null ? '' : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+// Minimal RFC-4180 style CSV parser (handles quotes, commas and newlines in fields)
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field);
+      field = '';
+    } else if (c === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else if (c !== '\r') {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
 
 // Helper function to convert Vietnamese text to accents-free format for accurate matches
 function removeVietnameseTones(str: string): string {
@@ -75,6 +129,9 @@ export default function App() {
 
   // Fullscreen map mode (useful on small devices)
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+
+  // Hidden file input used for importing a CSV itinerary
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [regionFilter, setRegionFilter] = useState<Region>('Tất cả');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -318,6 +375,98 @@ export default function App() {
     window.print();
   };
 
+  // Export the whole itinerary as a CSV file the user can save to Files/iCloud
+  const handleExportCSV = () => {
+    const lines = [
+      CSV_HEADERS.join(','),
+      ...locations.map(loc =>
+        CSV_HEADERS.map(h => csvEscape((loc as Record<string, unknown>)[h])).join(',')
+      ),
+    ];
+    // Prepend a BOM so Excel/Numbers read Vietnamese accents correctly
+    const csv = '﻿' + lines.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cam-on-nhe-lich-trinh-${dateTag}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Read a CSV file chosen by the user and load it into the itinerary
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so re-selecting the same file still fires onChange
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        let text = String(reader.result || '');
+        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+        const rows = parseCSV(text).filter(r => r.some(cell => cell.trim() !== ''));
+        if (rows.length < 2) throw new Error('empty');
+
+        const headers = rows[0].map(h => h.trim());
+        const col = (name: string) => headers.indexOf(name);
+
+        const fallbackImage =
+          'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&q=80&w=600';
+
+        const imported: TravelLocation[] = rows.slice(1).map((r, i) => {
+          const get = (name: string) => {
+            const j = col(name);
+            return j >= 0 && j < r.length ? r[j].trim() : '';
+          };
+          const lat = parseFloat(get('lat'));
+          const lng = parseFloat(get('lng'));
+          const plannedDate = get('plannedDate');
+          return {
+            id: get('id') || `csv_${Date.now()}_${i}`,
+            name: get('name') || 'Địa điểm chưa đặt tên',
+            region: get('region') || 'Miền Bắc',
+            image: get('image') || fallbackImage,
+            lat,
+            lng,
+            visited: get('visited').toLowerCase() === 'true',
+            notes: get('notes'),
+            plannedDate: plannedDate || undefined,
+            createdAt: get('createdAt') || new Date().toISOString(),
+          };
+        }).filter(loc => !isNaN(loc.lat) && !isNaN(loc.lng));
+
+        if (imported.length === 0) throw new Error('no valid rows');
+
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Nhập lịch trình từ CSV',
+          message: `Đã đọc được ${imported.length} địa điểm từ tệp "${file.name}". Bạn muốn thay thế toàn bộ lịch trình hiện tại bằng dữ liệu này?`,
+          type: 'warning',
+          onConfirm: () => {
+            setLocations(imported);
+            setSelectedLocation(null);
+            setNavTarget(null);
+            setConfirmDialog(null);
+          },
+        });
+      } catch (err) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Không đọc được tệp CSV',
+          message:
+            'Tệp không đúng định dạng. Hãy dùng tệp CSV đã xuất từ ứng dụng này (cần có cột name, lat, lng).',
+        });
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
   // Filter & Search computation with Accent-Insensitive Vietnamese support
   const filteredLocations = locations.filter(loc => {
     const matchesRegion = regionFilter === 'Tất cả' || loc.region === regionFilter;
@@ -434,6 +583,35 @@ export default function App() {
               <Download className="w-3.5 h-3.5 text-indigo-500" />
               <span>XUẤT PDF</span>
             </button>
+
+            {/* Save itinerary to a CSV file (for Files / iCloud) */}
+            <button
+              onClick={handleExportCSV}
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+              title="Lưu toàn bộ lịch trình ra tệp CSV (có thể lưu vào Files / iCloud)"
+              id="export-csv-btn"
+            >
+              <Save className="w-3.5 h-3.5 text-sky-500" />
+              <span>LƯU CSV</span>
+            </button>
+
+            {/* Load itinerary from a CSV file */}
+            <button
+              onClick={() => csvInputRef.current?.click()}
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+              title="Tải lịch trình từ tệp CSV đã lưu"
+              id="import-csv-btn"
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-500" />
+              <span>TẢI CSV</span>
+            </button>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleImportCSV}
+              className="hidden"
+            />
 
             {/* Social Share triggered buttons */}
             <button

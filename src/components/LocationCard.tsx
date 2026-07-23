@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Calendar, Trash2, CheckCircle2, Circle, Edit3, Check, X, FileText, Navigation } from 'lucide-react';
+import { MapPin, Calendar, Trash2, CheckCircle2, Circle, Edit3, Check, X, FileText, Navigation, Map as MapIcon } from 'lucide-react';
 import { TravelLocation } from '../types';
 
 interface LocationCardProps {
@@ -188,25 +188,39 @@ export const LocationCard: React.FC<LocationCardProps> = ({
 
         {/* Footer actions - flat material design */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-805/60 dark:border-slate-800/40 flex items-center justify-between gap-1 shrink-0 select-none">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onNavigate) {
-                onNavigate();
-              } else {
-                onSelect();
-              }
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer ${
-              isSelected
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
-            }`}
-            title="Chỉ đường realtime từ vị trí của bạn tới đây"
-          >
-            <Navigation className="w-2.5 h-2.5" />
-            <span>Bay tới</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onNavigate) {
+                  onNavigate();
+                } else {
+                  onSelect();
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer ${
+                isSelected
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
+              }`}
+              title="Chỉ đường realtime từ vị trí của bạn tới đây"
+            >
+              <Navigation className="w-2.5 h-2.5" />
+              <span>Bay tới</span>
+            </button>
+
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 dark:text-emerald-400"
+              title="Mở chỉ đường trong Google Maps"
+            >
+              <MapIcon className="w-2.5 h-2.5" />
+              <span>Maps</span>
+            </a>
+          </div>
 
           <button
             onClick={(e) => {
