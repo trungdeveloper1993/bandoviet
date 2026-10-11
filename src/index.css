@@ -3,28 +3,89 @@
 
 @variant dark (&:where(.dark, .dark *));
 
-/* Load Leaflet CSS directly from CDN to guarantee accuracy across compilation environments */
-@import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+/*
+ * In-between shades (150, 250 … 850) used across the app. Tailwind only ships
+ * 50/100…900/950, so without these the classes silently did nothing (e.g.
+ * `border-slate-150` fell back to a harsh currentColor border).
+ */
+@theme {
+  --color-slate-150: oklch(94.85% 0.01 251.7);
+  --color-slate-250: oklch(89.9% 0.0175 254.2);
+  --color-slate-350: oklch(78.65% 0.031 254.84);
+  --color-slate-450: oklch(62.9% 0.043 257.1);
+  --color-slate-550: oklch(50% 0.0445 257.35);
+  --color-slate-650: oklch(40.9% 0.0435 257.28);
+  --color-slate-750: oklch(32.55% 0.0425 258.66);
+  --color-slate-850: oklch(24.35% 0.0415 262.89);
+  --color-indigo-550: oklch(54.8% 0.2475 277.04);
+  --color-indigo-650: oklch(48.4% 0.251 276.99);
+  --color-yellow-350: oklch(88.5% 0.17 98);
+
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-pop: pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  70% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
 
 @layer base {
-  :root {
-    --font-retro: "Plus Jakarta Sans", sans-serif;
-    --font-sans: "Plus Jakarta Sans", sans-serif;
-    --font-display: "Plus Jakarta Sans", sans-serif;
-    --font-mono: "JetBrains Mono", monospace;
+  /*
+   * Tailwind v4 defaults borders to currentColor (v3 used gray-200). Restore a
+   * soft default so plain `border` never renders as a black outline.
+   */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-slate-200, currentColor);
   }
-}
 
-body {
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  background-color: #f8fafc;
-  color: #0f172a;
-}
+  .dark *,
+  .dark ::after,
+  .dark ::before {
+    border-color: var(--color-slate-800, currentColor);
+  }
 
-.dark body {
-  background-color: #090d16;
-  color: #f1f5f9;
+  html {
+    /* Keep anchored sections clear of the sticky header */
+    scroll-padding-top: 5rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #f6f7fb;
+    color: #0f172a;
+  }
+
+  .dark body {
+    background-color: #070b14;
+    color: #f1f5f9;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 h1, h2, h3, .font-display {
@@ -35,93 +96,33 @@ pre, code, .font-mono {
   font-family: var(--font-mono);
 }
 
-/* Redefined retro classes as modern layout presets to keep backwards compatibility */
-.retro-title {
-  font-family: var(--font-display) !important;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+/* Hide scrollbars on horizontally scrolling chip rows while keeping them scrollable */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-.retro-pixel-border {
-  border: 1px solid rgba(0, 0, 0, 0.08) !important;
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05) !important;
-  border-radius: 24px !important;
+/* iPhone home-indicator safe area */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-.dark .retro-pixel-border {
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 15px 40px -10px rgba(0, 0, 0, 0.3) !important;
+/* Legacy helper still referenced by the add-location modal */
+.animate-fadeIn {
+  animation: fade-in 0.25s ease-out both;
 }
 
-.retro-pixel-border-sm {
-  border: 1px solid rgba(0, 0, 0, 0.06) !important;
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.03) !important;
-  border-radius: 16px !important;
-}
-
-.dark .retro-pixel-border-sm {
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.25) !important;
-}
-
-.retro-btn {
-  border: none !important;
-  border-radius: 9999px !important;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
-}
-
-.retro-btn:hover {
-  transform: scale(1.02);
-}
-
-.retro-btn:active {
-  transform: scale(0.98) !important;
-}
-
-.retro-btn-sm {
-  border: none !important;
-  border-radius: 9999px !important;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.retro-btn-sm:active {
-  transform: scale(0.95) !important;
-}
-
-.retro-input {
-  border: 1.5px solid rgba(0, 0, 0, 0.1) !important;
-  border-radius: 14px !important;
-  background-color: #f1f5f9 !important;
-  color: #0f172a !important;
-  transition: all 0.2s ease;
-}
-
-.retro-input:focus {
-  border-color: #4f46e5 !important;
-  background-color: #ffffff !important;
-}
-
-.dark .retro-input {
-  border: 1.5px solid rgba(255, 255, 255, 0.1) !important;
-  background-color: #1e293b !important;
-  color: #f1f5f9 !important;
-}
-
-.dark .retro-input:focus {
-  border-color: #818cf8 !important;
-  background-color: #0f172a !important;
-}
-
-/* CRT scanlines disabled for clean modern Android design style */
-.retro-crt::after {
-  content: none !important;
-}
-
-/* Custom map CSS helper rules to avoid Leaflet broken icons */
+/* ---------- Leaflet tweaks ---------- */
 .leaflet-container {
-  font-family: "VT323", monospace !important;
+  font-family: var(--font-sans) !important;
   image-rendering: auto !important;
+  background: #e8ecf3;
+}
+
+.dark .leaflet-container {
+  background: #0f172a;
 }
 
 /* Bulletproof styles to prevent tile misalignments and layout drift under Tailwind */
@@ -153,12 +154,38 @@ pre, code, .font-mono {
   pointer-events: none;
 }
 
-.leaflet-popup-content-wrapper {
+/* Rounded, softer zoom control */
+.leaflet-bar {
+  border: none !important;
   border-radius: 12px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  overflow: hidden;
+  box-shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.25) !important;
+}
+.leaflet-bar a {
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  border-bottom-color: #eef1f6 !important;
+  color: #334155 !important;
+}
+.dark .leaflet-bar a {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-bottom-color: #1e293b !important;
 }
 
-/* Custom Scrollbar */
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16) !important;
+}
+
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  border-top-left-radius: 8px;
+  opacity: 0.8;
+}
+
+/* ---------- Scrollbars ---------- */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -169,53 +196,21 @@ pre, code, .font-mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
+  background: rgba(148, 163, 184, 0.35);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
+  background: rgba(148, 163, 184, 0.6);
 }
 
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 12px 3px rgba(79, 70, 229, 0.35);
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s infinite;
-}
-
-@keyframes swing {
-  0%, 100% { transform: rotate(0deg); }
-  20% { transform: rotate(15deg); }
-  40% { transform: rotate(-10deg); }
-  60% { transform: rotate(5deg); }
-  80% { transform: rotate(-5deg); }
-}
-
-.animate-swing {
-  animation: swing 2.5s ease-in-out infinite;
-}
-
-/* For beautiful smooth theme toggle transitions */
-html.dark {
-  color-scheme: dark;
-}
-
-.animate-spin-slow {
-  animation: spin 8s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -1,8 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Image as ImageIcon, MapPin, Calendar, HelpCircle, Sparkles, Loader2 } from 'lucide-react';
+import {
+  X,
+  Image as ImageIcon,
+  MapPin,
+  CalendarDays,
+  Sparkles,
+  Loader2,
+  LocateFixed,
+  MousePointerClick,
+  Check,
+  CircleCheck,
+  AlertTriangle,
+} from 'lucide-react';
 import { TravelLocation } from '../types';
 import { BEAUTIFUL_PRESETS, FAMOUS_DESTINATIONS, SuggestedSpot } from '../data/defaultLocations';
+import { REGIONS } from '../lib/utils';
+import SmartImage from './SmartImage';
 
 interface AddLocationModalProps {
   isOpen: boolean;
@@ -11,6 +25,11 @@ interface AddLocationModalProps {
   initialLat?: number;
   initialLng?: number;
   isDarkMode: boolean;
+  /** GPS fix available → enables "pin my current location" */
+  hasGps?: boolean;
+  onUseMyLocation?: () => void;
+  /** Close the dialog so the user can tap a spot on the map */
+  onPickOnMap?: () => void;
 }
 
 export const AddLocationModal: React.FC<AddLocationModalProps> = ({
@@ -19,7 +38,9 @@ export const AddLocationModal: React.FC<AddLocationModalProps> = ({
   onSave,
   initialLat,
   initialLng,
-  isDarkMode
+  hasGps = false,
+  onUseMyLocation,
+  onPickOnMap,
 }) => {
   const [name, setName] = useState('');
   const [region, setRegion] = useState('Miền Bắc');
@@ -137,6 +158,16 @@ export const AddLocationModal: React.FC<AddLocationModalProps> = ({
       setIsFetchingRealtime(false);
     }
   };
+
+  // Opened from the "+" button (no coordinates yet): clear suggestions left over from a previous pin
+  useEffect(() => {
+    if (isOpen && (initialLat === undefined || initialLng === undefined)) {
+      setDetectedCity(null);
+      setRealtimeSpots([]);
+      setHasRealtimeError(false);
+      setGeocodeError(null);
+    }
+  }, [isOpen, initialLat, initialLng]);
 
   // Sync clicked coordinates from map if any and perform reverse geocoding via OpenStreetMap/Nominatim API
   useEffect(() => {
@@ -349,389 +380,412 @@ export const AddLocationModal: React.FC<AddLocationModalProps> = ({
     onClose();
   };
 
+  // ESC closes the dialog
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  const inputClass =
+    'w-full h-11 px-3.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none ring-2 ring-transparent focus:ring-indigo-500/40 focus:bg-white dark:focus:bg-slate-800 transition';
+  const labelClass = 'flex items-center gap-1.5 mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400';
+  const hasCoords = initialLat !== undefined && initialLng !== undefined;
+
+  const quickAdd = (spot: SuggestedSpot) => {
+    onSave({
+      name: spot.name,
+      region: spot.region,
+      image: spot.image,
+      lat: spot.lat,
+      lng: spot.lng,
+      notes: spot.notes,
+      visited: false,
+    });
+    onClose();
+  };
+
+  const renderSpot = (spot: SuggestedSpot, idx: number) => (
+    <div
+      key={`${spot.name}-${idx}`}
+      className="flex items-center gap-3 p-2 rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/70 dark:ring-slate-800"
+    >
+      <SmartImage
+        src={spot.image}
+        alt={spot.name}
+        seed={spot.name}
+        className="w-14 h-14 rounded-xl object-cover shrink-0"
+        emojiClassName="text-2xl"
+      />
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-slate-900 dark:text-white truncate" title={spot.name}>
+          {spot.name.split(',')[0]}
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2" title={spot.notes}>
+          {spot.notes}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => quickAdd(spot)}
+          className="h-8 px-3 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition"
+          title="Ghim ngay lên bản đồ"
+        >
+          Ghim
+        </button>
+        <button
+          type="button"
+          onClick={() => handleApplyPreset(spot)}
+          className="h-8 px-3 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition"
+          title="Điền vào biểu mẫu để chỉnh sửa trước khi lưu"
+        >
+          Sửa
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          {/* Backdrop with pixel noise pattern feel */}
-                {/* Modal Container in retro pixel border style */}
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center sm:p-4 print:hidden">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
-            transition={{ duration: 0.15 }}
-            className="relative bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_24px_50px_rgba(0,0,0,0.14)] flex flex-col max-h-[90vh] z-10 select-none text-slate-800 dark:text-slate-100"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-title"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 340 }}
+            className="relative w-full sm:max-w-2xl max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-t-[28px] sm:rounded-3xl shadow-2xl ring-1 ring-slate-900/5 dark:ring-white/10 text-slate-800 dark:text-slate-100"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60 shrink-0 bg-slate-50 dark:bg-slate-900/40">
-              <div className="flex items-center gap-2">
-                <span className="text-yellow-400 font-extrabold text-sm font-mono animate-bounce">★</span>
-                <span className="text-sm uppercase tracking-tight font-black text-slate-900 dark:text-white">
-                  THÊM ĐỊA DANH MỚI
-                </span>
+            <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <h2 id="add-title" className="text-base font-bold text-slate-900 dark:text-white">
+                  Thêm địa điểm mới
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  {hasCoords ? 'Đã lấy vị trí bạn chọn trên bản đồ' : 'Chọn vị trí, dùng gợi ý hoặc tự điền thông tin'}
+                </p>
               </div>
               <button
+                type="button"
                 onClick={onClose}
-                className="py-1 px-3 border border-slate-200 dark:border-slate-700 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-[9px] font-bold cursor-pointer flex items-center gap-1.5"
+                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                aria-label="Đóng"
                 id="close-add-location-modal"
               >
-                <X className="w-3.5 h-3.5 shrink-0" />
-                <span>ĐÓNG</span>
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Scrollable Content */}
-            <div className="overflow-y-auto px-6 py-4 flex-1 space-y-4">
-              {/* Spot Suggestions based on Detected City/Province */}
-              {detectedCity && (
-                <div className="space-y-3 bg-indigo-50/20 dark:bg-slate-950 p-4 border border-indigo-100/60 dark:border-indigo-900/30 rounded-2xl animate-fadeIn">
-                  {/* Spots Suggestion Header */}
-                  <div className="flex items-center gap-1.5 pb-2 select-none border-b border-dashed border-slate-200 dark:border-slate-800">
-                    <Sparkles className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-900 dark:text-white">
-                      💡 GỢI Ý ĐỊA DANH NỔI TIẾNG TẠI KHU VỰC {detectedCity.cityName.toUpperCase()}:
-                    </span>
-                  </div>
-
-                  {/* Suggestion Spots Scroll list */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1.5 custom-scrollbar">
-                    {detectedCity.spots.map((spot, idx) => (
-                      <div
-                        key={idx}
-                        className="group relative border border-slate-100 dark:border-slate-800/60 p-2 flex items-center bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-2xl transition duration-200 gap-3"
-                      >
-                        <img
-                          src={spot.image}
-                          alt={spot.name}
-                          referrerPolicy="no-referrer"
-                          className="w-12 h-12 object-cover shrink-0 rounded-xl shadow-sm"
-                        />
-                        <div className="flex-1 min-w-0 pr-1 select-text">
-                          <p className="text-[10px] font-bold text-slate-950 dark:text-white truncate uppercase">
-                            {spot.name.split(',')[0]}
-                          </p>
-                          <p className="text-[8.5px] text-slate-500 dark:text-slate-405 truncate italic font-sans" title={spot.notes}>
-                            {spot.notes}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-0.5 font-mono">
-                            <span className="text-[7px] bg-indigo-50 border border-indigo-105 px-1 py-0.2 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400 font-bold uppercase shrink-0">
-                              {spot.region}
-                            </span>
-                            <span className="text-[6.5px] text-slate-400 dark:text-slate-500 shrink-0">
-                              ({spot.lat.toFixed(2)}°, {spot.lng.toFixed(2)}°)
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-col gap-1 shrink-0">
-                          {/* Choose button to prefill form */}
-                          <button
-                            type="button"
-                            onClick={() => handleApplyPreset(spot)}
-                            className="px-2.5 py-1 bg-yellow-350 bg-yellow-300 hover:bg-yellow-400 border-none rounded-lg text-[9px] font-black uppercase text-slate-900 cursor-pointer shadow-sm active:scale-95 transition"
-                            title="Nạp dữ liệu vào biểu mẫu đăng ký bên dưới"
-                          >
-                            CHỌN
-                          </button>
-                          {/* Quick add button directly saves to traveler checklist */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSave({
-                                name: spot.name,
-                                region: spot.region,
-                                image: spot.image,
-                                lat: spot.lat,
-                                lng: spot.lng,
-                                notes: spot.notes,
-                                visited: false
-                              });
-                              onClose();
-                            }}
-                            className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase cursor-pointer shadow-sm active:scale-95 transition"
-                            title="Ghim tức thì lên nhật trình bản đồ"
-                          >
-                            GHIM ⚡
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Real-time Nearby Spot Suggestions wrapper */}
-              {!detectedCity && (
-                <div className="space-y-3 bg-indigo-50/20 dark:bg-slate-950 p-4 border border-indigo-100/60 dark:border-indigo-900/30 rounded-2xl animate-fadeIn">
-                  <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-200 dark:border-slate-800 font-mono">
-                    <div className="flex items-center gap-1.5 select-none">
-                      <Sparkles className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-900 dark:text-white font-sans">
-                        💡 GỢI Ý ĐỊA DANH LÂN CẬN (QUÉT REALTIME VỆ TINH):
+            <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                {/* Where is it? (only when no point was picked on the map) */}
+                {!hasCoords && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={onUseMyLocation}
+                      disabled={!hasGps || !onUseMyLocation}
+                      className="flex items-center gap-3 p-3 rounded-2xl text-left bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 disabled:opacity-50 disabled:pointer-events-none transition"
+                      id="add-use-my-location"
+                    >
+                      <span className="shrink-0 w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                        <LocateFixed className="w-5 h-5" />
                       </span>
-                    </div>
-                    {isFetchingRealtime && (
-                      <div className="flex items-center gap-1 text-[8px] text-indigo-600 dark:text-indigo-400 animate-pulse font-extrabold uppercase font-sans">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
-                        Đang dò tìm...
-                      </div>
-                    )}
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">Ghim vị trí hiện tại</span>
+                        <span className="block text-xs text-slate-500 dark:text-slate-400">
+                          {hasGps ? 'Nơi bạn đang đứng (GPS)' : 'Cần bật định vị trên thiết bị'}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onPickOnMap}
+                      disabled={!onPickOnMap}
+                      className="flex items-center gap-3 p-3 rounded-2xl text-left bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 transition"
+                    >
+                      <span className="shrink-0 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-sm">
+                        <MousePointerClick className="w-5 h-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">Chọn trên bản đồ</span>
+                        <span className="block text-xs text-slate-500 dark:text-slate-400">Chạm vào điểm bạn muốn ghim</span>
+                      </span>
+                    </button>
                   </div>
+                )}
 
-                  {isFetchingRealtime && (
-                    <div className="py-6 text-center text-slate-500 dark:text-slate-400 font-sans text-[10px] uppercase tracking-wider animate-pulse font-medium">
-                      ⌛ Đang kết nối máy chủ bản đồ để dò tìm danh thắng trong bán kính 25km...
-                    </div>
-                  )}
-
-                  {!isFetchingRealtime && realtimeSpots.length === 0 && !hasRealtimeError && (
-                    <div className="py-4 text-center text-slate-400 dark:text-slate-550 font-sans text-[11px] italic">
-                      Không tìm thấy điểm tham quan nổi bật nào lân cận tọa độ này. Bạn có thể tự do nhập tên địa điểm thủ công bên dưới!
-                    </div>
-                  )}
-
-                  {!isFetchingRealtime && hasRealtimeError && (
-                    <div className="py-4 text-center text-rose-500 font-sans text-[10px] uppercase font-bold">
-                      ⚠️ Gặp sự cố kết nối máy chủ gợi ý. Bạn hãy tự điền tên địa điểm thủ công bên dưới!
-                    </div>
-                  )}
-
-                  {!isFetchingRealtime && realtimeSpots.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1.5 custom-scrollbar">
-                      {realtimeSpots.map((spot, idx) => (
-                        <div
-                          key={idx}
-                          className="group relative border border-slate-100 dark:border-slate-800/60 p-2 flex items-center bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-2xl transition duration-200 gap-3"
+                {/* City quick picks */}
+                {!hasCoords && (
+                  <div>
+                    <span className={labelClass}>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      Gợi ý theo thành phố
+                    </span>
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-5 px-5 sm:mx-0 sm:px-0 sm:flex-wrap">
+                      {FAMOUS_DESTINATIONS.map((city) => (
+                        <button
+                          key={city.id}
+                          type="button"
+                          onClick={() => setDetectedCity(detectedCity?.id === city.id ? null : city)}
+                          aria-pressed={detectedCity?.id === city.id}
+                          className={`shrink-0 h-9 px-3.5 rounded-xl text-[13px] font-semibold ring-1 transition ${
+                            detectedCity?.id === city.id
+                              ? 'bg-indigo-600 text-white ring-indigo-600'
+                              : 'bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700'
+                          }`}
                         >
-                          <img
-                            src={spot.image}
-                            alt={spot.name}
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 object-cover shrink-0 rounded-xl shadow-sm"
-                          />
-                          <div className="flex-1 min-w-0 pr-1 select-text">
-                            <p className="text-[10px] font-bold text-slate-950 dark:text-white truncate uppercase" title={spot.name}>
-                              {spot.name.split(',')[0]}
-                            </p>
-                            <p className="text-[8.5px] text-slate-500 dark:text-slate-405 truncate italic font-sans" title={spot.notes}>
-                              {spot.notes}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-0.5 font-mono">
-                              <span className="text-[7px] bg-emerald-50 border border-emerald-100 px-1 py-0.2 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400 font-bold uppercase shrink-0">
-                                {spot.region}
-                              </span>
-                              <span className="text-[6.5px] text-slate-400 dark:text-slate-500 shrink-0">
-                                ({spot.lat.toFixed(2)}°, {spot.lng.toFixed(2)}°)
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col gap-1 shrink-0">
-                            {/* Choose button to prefill form */}
-                            <button
-                              type="button"
-                              onClick={() => handleApplyPreset(spot)}
-                              className="px-2.5 py-1 bg-yellow-300 hover:bg-yellow-400 border-none rounded-lg text-[9px] font-black uppercase text-slate-900 cursor-pointer shadow-sm active:scale-95 transition"
-                              title="Nạp dữ liệu vào biểu mẫu đăng ký bên dưới"
-                            >
-                              CHỌN
-                            </button>
-                            {/* Quick add button directly saves to traveler checklist */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSave({
-                                  name: spot.name,
-                                  region: spot.region,
-                                  image: spot.image,
-                                  lat: spot.lat,
-                                  lng: spot.lng,
-                                  notes: spot.notes,
-                                  visited: false
-                                });
-                                onClose();
-                              }}
-                              className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white border-none rounded-lg text-[9px] font-black uppercase cursor-pointer shadow-sm active:scale-95 transition"
-                              title="Ghim tức thời lên nhật trình bản đồ"
-                            >
-                              GHIM ⚡
-                            </button>
-                          </div>
-                        </div>
+                          {city.cityName}
+                        </button>
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4.5">
-                 {/* Name */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                    ✦ TÊN ĐỊA ĐIỂM / DANH THẮNG: <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ví dụ: Đồi chè Cầu Đất, Đà Lạt..."
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 border border-slate-205 border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:bg-slate-950 placeholder-slate-400 dark:text-white text-xs font-semibold rounded-xl transition"
-                    />
                   </div>
+                )}
+
+                {/* Famous spots for the detected / chosen city */}
+                {detectedCity && (
+                  <section className="rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/5 ring-1 ring-indigo-100 dark:ring-indigo-500/15 p-3 animate-fade-in">
+                    <p className="flex items-center gap-1.5 mb-2.5 text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      Địa danh nổi tiếng tại {detectedCity.cityName}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[232px] overflow-y-auto">
+                      {detectedCity.spots.map(renderSpot)}
+                    </div>
+                  </section>
+                )}
+
+                {/* Nearby attractions around the tapped point */}
+                {hasCoords && !detectedCity && (
+                  <section className="rounded-2xl bg-emerald-50/60 dark:bg-emerald-500/5 ring-1 ring-emerald-100 dark:ring-emerald-500/15 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                      <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        Địa danh lân cận (25 km)
+                      </p>
+                      {isFetchingRealtime && (
+                        <span className="flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Đang dò tìm…
+                        </span>
+                      )}
+                    </div>
+                    {isFetchingRealtime ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {[0, 1].map((i) => (
+                          <div key={i} className="h-[72px] rounded-2xl bg-white/70 dark:bg-slate-800/60 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : hasRealtimeError ? (
+                      <p className="text-xs text-rose-600 dark:text-rose-400">
+                        Không tải được gợi ý lúc này — bạn cứ đặt tên bên dưới nhé.
+                      </p>
+                    ) : realtimeSpots.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Không có điểm tham quan nổi bật quanh đây. Bạn có thể tự đặt tên bên dưới.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[232px] overflow-y-auto">
+                        {realtimeSpots.map(renderSpot)}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Name */}
+                <div>
+                  <label htmlFor="add-name" className={labelClass}>
+                    <MapPin className="w-3.5 h-3.5" />
+                    Tên địa điểm <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="add-name"
+                    type="text"
+                    required
+                    placeholder="VD: Đồi chè Cầu Đất, Đà Lạt"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className={inputClass}
+                  />
                   {isGeocoding && (
-                    <span className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1 flex items-center gap-1 font-bold font-mono animate-pulse uppercase">
-                      ⌛ ĐANG QUÉT TỌA ĐỘ VÀ TẢI ĐỊA DANH HÀNH CHÍNH...
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Đang tìm địa chỉ của điểm này…
                     </span>
                   )}
                   {geocodeError && (
-                    <span className="text-[9px] text-rose-500 font-extrabold uppercase mt-1 block font-mono">
-                      ⚠️ LỖI: {geocodeError}
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {geocodeError}
                     </span>
                   )}
-                  {!isGeocoding && !geocodeError && initialLat !== undefined && initialLng !== undefined && (
-                    <span className="text-[9px] text-emerald-500 font-extrabold uppercase mt-1 block font-mono">
-                      ✔ ĐÃ TỰ ĐỘNG KHỚP VỚI ĐỊA CHỈ TRÊN BẢN ĐỒ THỰC TẾ!
+                  {!isGeocoding && !geocodeError && hasCoords && (
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      <CircleCheck className="w-3.5 h-3.5" />
+                      Đã tự điền theo địa chỉ thực tế trên bản đồ
                     </span>
                   )}
                 </div>
 
-                {/* Region & Date */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                      ✦ KHU VỰC PHÂN PHỐI:
-                    </label>
-                    <select
-                      value={region}
-                      onChange={(e) => setRegion(e.target.value)}
-                      className="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl"
-                    >
-                      <option value="Miền Bắc">Miền Bắc</option>
-                      <option value="Miền Trung">Miền Trung</option>
-                      <option value="Miền Nam">Miền Nam</option>
-                      <option value="Nước ngoài">Nước ngoài</option>
-                    </select>
+                {/* Region */}
+                <div>
+                  <span className={labelClass}>Khu vực</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {REGIONS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRegion(r)}
+                        aria-pressed={region === r}
+                        className={`h-10 rounded-xl text-[13px] font-semibold ring-1 transition ${
+                          region === r
+                            ? 'bg-indigo-600 text-white ring-indigo-600'
+                            : 'bg-white text-slate-600 ring-slate-200 hover:ring-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Planned date */}
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                      ✦ THỜI GIAN DỰ KIẾN:
+                    <label htmlFor="add-date" className={labelClass}>
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      Ngày dự kiến đi
                     </label>
                     <input
+                      id="add-date"
                       type="date"
                       value={plannedDate}
                       onChange={(e) => setPlannedDate(e.target.value)}
-                      className="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl"
+                      className={inputClass}
                     />
                   </div>
-                </div>
 
-                {/* Coordinates */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Visited */}
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                      ✦ VĨ ĐỘ (LATITUDE):
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      required
-                      value={lat}
-                      onChange={(e) => setLat(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl"
-                    />
+                    <span className={labelClass}>Trạng thái</span>
+                    <button
+                      type="button"
+                      onClick={() => setVisited(!visited)}
+                      aria-pressed={visited}
+                      className={`w-full h-11 px-3.5 rounded-2xl flex items-center gap-2.5 text-sm font-semibold transition ${
+                        visited
+                          ? 'bg-emerald-50 text-emerald-700 ring-2 ring-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          : 'bg-slate-100/80 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                          visited ? 'bg-emerald-500 text-white' : 'ring-2 ring-slate-300 dark:ring-slate-600'
+                        }`}
+                      >
+                        {visited && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                      </span>
+                      {visited ? 'Đã đi rồi' : 'Chưa đi'}
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                      ✦ KINH ĐỘ (LONGITUDE):
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      required
-                      value={lng}
-                      onChange={(e) => setLng(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl"
-                    />
-                  </div>
-                </div>
-
-                {/* Image URL */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                    ✦ LIÊN KẾT ẢNH MINH HỌA (HTTP/HTTPS):
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/your-custom-photo-link..."
-                    value={image}
-                    onChange={(e) => setImage(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl"
-                  />
-                  <span className="text-[8.5px] text-slate-450 dark:text-slate-500 mt-1 block uppercase font-mono">
-                    MẸO: SẼ TỰ ĐỘNG GÁN SỐ LIỆU ẢNH DỮ LIỆU ĐẸP NẾU BẠN BỎ TRỐNG LIÊN KẾT!
-                  </span>
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 dark:text-slate-450 uppercase tracking-widest mb-1.5 font-mono">
-                    ✦ GHI CHÚ HÀNH TRÌNH CHIA SẺ:
+                  <label htmlFor="add-notes" className={labelClass}>
+                    Ghi chú
                   </label>
                   <textarea
-                    rows={2.5}
-                    placeholder="Những góc Checkin đẹp, lưu ý tiền thuê xe, các món đặc sản cần ăn thử tại danh lam..."
+                    id="add-notes"
+                    rows={3}
+                    placeholder="Món ngon, góc check-in đẹp, lưu ý khi đi…"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-indigo-500 focus:outline-none bg-white dark:bg-slate-950 dark:text-white text-xs font-semibold rounded-xl resize-none"
+                    className={`${inputClass} h-auto py-3 resize-none leading-relaxed`}
                   />
                 </div>
 
-                {/* Visited Status Checkbox */}
-                <div className="flex items-center gap-2.5 pt-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setVisited(!visited)}
-                    className="shrink-0 focus:outline-none cursor-pointer"
-                  >
-                    {visited ? (
-                      <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-xs">
-                        ✔
-                      </div>
-                    ) : (
-                      <div className="w-5 h-5 rounded-full border border-slate-350 dark:border-slate-700 bg-white dark:bg-slate-950 block transition" />
-                    )}
-                  </button>
-                  <label 
-                    onClick={() => setVisited(!visited)}
-                    className="text-[10px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none uppercase font-sans hover:text-indigo-500 transition"
-                  >
-                    ĐÃ CHINH PHỤC THÀNH CÔNG VÙNG ĐẤT NÀY?
+                {/* Image */}
+                <div>
+                  <label htmlFor="add-image" className={labelClass}>
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    Link ảnh minh họa
                   </label>
+                  <input
+                    id="add-image"
+                    type="url"
+                    placeholder="https://… (để trống sẽ dùng ảnh mặc định)"
+                    value={image}
+                    onChange={(e) => setImage(e.target.value)}
+                    className={inputClass}
+                  />
                 </div>
 
-                {/* Submit Panel */}
-                <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800/60">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-xs font-bold rounded-full bg-slate-50 dark:bg-slate-850 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 uppercase cursor-pointer transition"
-                  >
-                    HỦY BỎ
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 bg-indigo-650 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold uppercase rounded-full shadow-sm cursor-pointer transition active:scale-95"
-                    id="save-new-location-button"
-                  >
-                    GHIM NGAY
-                  </button>
+                {/* Coordinates */}
+                <div>
+                  <span className={labelClass}>Tọa độ (vĩ độ, kinh độ)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      aria-label="Vĩ độ"
+                      value={lat}
+                      onChange={(e) => setLat(parseFloat(e.target.value) || 0)}
+                      className={`${inputClass} font-mono`}
+                    />
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      aria-label="Kinh độ"
+                      value={lng}
+                      onChange={(e) => setLng(parseFloat(e.target.value) || 0)}
+                      className={`${inputClass} font-mono`}
+                    />
+                  </div>
+                  {!hasCoords && (
+                    <span className="block mt-1.5 text-xs text-slate-400 dark:text-slate-500">
+                      Mẹo: chọn trên bản đồ hoặc dùng vị trí hiện tại để có tọa độ chính xác.
+                    </span>
+                  )}
                 </div>
-              </form>
-            </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="h-11 px-4 rounded-2xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 dark:text-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={!name.trim() || isGeocoding}
+                  className="h-11 px-5 rounded-2xl text-sm font-semibold text-white bg-linear-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-600/25 disabled:opacity-50 disabled:shadow-none active:scale-[0.98] transition"
+                  id="save-new-location-button"
+                >
+                  Ghim địa điểm
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Send, Copy, Check, Facebook, Twitter, ShieldCheck } from 'lucide-react';
+import { X, Copy, Check, Facebook, Send, Share2, Link2 } from 'lucide-react';
+import { copyText } from '../lib/utils';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -8,126 +9,153 @@ interface ShareModalProps {
   shareUrl: string;
 }
 
+const SHARE_TEXT = 'Xem bản đồ hành trình du lịch của mình nhé!';
+
 export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, shareUrl }) => {
   const [copied, setCopied] = useState(false);
+  const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    if (!isOpen) {
+      setCopied(false);
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  const handleCopyLink = async () => {
+    if (await copyText(shareUrl)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleNativeShare = async () => {
+    try {
+      await navigator.share({ title: 'Cảm ơn Nhé — Lịch trình', text: SHARE_TEXT, url: shareUrl });
+    } catch {
+      // user cancelled — nothing to do
+    }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center sm:p-4 print:hidden">
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.55 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] dark:bg-black/85"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
-            className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl border border-slate-100 dark:border-slate-800/80 p-6 flex flex-col z-10 select-none text-slate-850 dark:text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.12)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-title"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 340 }}
+            className="relative w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-[28px] sm:rounded-3xl shadow-2xl ring-1 ring-slate-900/5 dark:ring-white/10 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-5 text-slate-800 dark:text-slate-100"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3.5 pb-3 border-b border-slate-100 dark:border-slate-800/60">
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2 font-sans">
-                <span className="text-yellow-400 font-extrabold animate-bounce">★</span>
-                <span>CHIA SẺ LỊCH TRÌNH</span>
-              </h3>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="w-11 h-11 rounded-2xl bg-linear-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/25">
+                  <Share2 className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 id="share-title" className="text-base font-bold text-slate-900 dark:text-white">
+                    Chia sẻ lịch trình
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Bạn bè mở link là thấy toàn bộ bản đồ của bạn</p>
+                </div>
+              </div>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-full bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
+                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                aria-label="Đóng"
                 id="close-share-modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Description */}
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-4 leading-relaxed font-sans">
-              Gửi lịch trình du lịch cá nhân này tới bạn bè của bạn! Toàn bộ vị trí địa điểm định đi, đã đi kèm ghi chú chi tiết đã được mã hóa an toàn vào đường dẫn liên kết này.
-            </p>
+            {canNativeShare && (
+              <button
+                onClick={handleNativeShare}
+                className="mt-5 w-full h-12 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-white bg-linear-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-600/25 active:scale-[0.99] transition"
+              >
+                <Send className="w-4 h-4" />
+                Gửi qua Zalo, Messenger, tin nhắn…
+              </button>
+            )}
 
-            {/* URL Input Box */}
-            <div className="bg-slate-50 dark:bg-slate-950 p-2.5 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-stretch gap-2 mb-4 select-none">
+            <div className="mt-4 flex items-center gap-2 p-1.5 pl-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70">
+              <Link2 className="w-4 h-4 shrink-0 text-slate-400" />
               <input
                 type="text"
                 readOnly
                 value={shareUrl}
-                className="bg-transparent border-none outline-none text-[10px] text-slate-700 dark:text-slate-350 w-full font-mono overflow-x-auto py-1 px-1.5 focus:outline-none"
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 min-w-0 bg-transparent outline-none text-xs text-slate-600 dark:text-slate-300 font-mono"
+                aria-label="Liên kết chia sẻ"
               />
               <button
                 onClick={handleCopyLink}
-                className={`flex items-center justify-center gap-1.5 font-bold text-[10px] uppercase px-3.5 py-1.5 rounded-xl cursor-pointer transition active:scale-95 shrink-0 ${
+                className={`shrink-0 h-9 px-3.5 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition active:scale-95 ${
                   copied
                     ? 'bg-emerald-500 text-white'
-                    : 'bg-indigo-650 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+                    : 'bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600'
                 }`}
                 id="share-copy-link-btn"
               >
-                {copied ? (
-                  <>
-                    <Check className="w-3 h-3 text-white" />
-                    <span>Xong!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3 h-3 text-white" />
-                    <span>COPY</span>
-                  </>
-                )}
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? 'Đã chép' : 'Sao chép'}
               </button>
             </div>
 
-            {/* Social Share grid */}
-            <div className="space-y-3 pt-0.5">
-              <label className="text-[8px] text-slate-450 dark:text-slate-500 font-extrabold uppercase tracking-widest block font-mono">
-                ✦ CHIA SẺ QUA NỀN TẢNG:
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                <a
-                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase cursor-pointer transition"
-                >
-                  <Facebook className="w-3.5 h-3.5 text-blue-600 fill-blue-600 border-none shrink-0" />
-                  <span>Facebook</span>
-                </a>
-
-                <a
-                  href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent('Xem bản đồ du lịch độc nhất vô nhị của mình tại đây nhé!')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase cursor-pointer transition"
-                >
-                  <Twitter className="w-3.5 h-3.5 text-sky-500 fill-sky-500 border-none shrink-0" />
-                  <span>Twitter</span>
-                </a>
-              </div>
-
-              {/* Zalo Messenger custom info copy popup alert */}
-              <div className="p-3 bg-amber-500/10 border border-dashed border-amber-500/30 rounded-2xl text-[10px] text-amber-700 dark:text-amber-400 flex items-start gap-2.5 leading-relaxed">
-                <ShieldCheck className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
-                <span className="font-sans">
-                 Đối với <b>Zalo</b> hoặc <b>Messenger</b>, hãy nhấp vào nút <b>COPY</b> ở trên và dán hộp thoại gửi cho bạn bè để chia sẻ lập tức!
-                </span>
-              </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a
+                href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-11 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                <Facebook className="w-4 h-4 text-blue-600 fill-blue-600" />
+                Facebook
+              </a>
+              <button
+                onClick={() => {
+                  // Zalo has no web share endpoint: phones use the native sheet (which lists the Zalo app);
+                  // elsewhere copy the link and open Zalo Web so it can be pasted into a chat.
+                  if (canNativeShare && window.matchMedia('(pointer: coarse)').matches) {
+                    handleNativeShare();
+                    return;
+                  }
+                  handleCopyLink();
+                  window.open('https://chat.zalo.me/', '_blank', 'noopener');
+                }}
+                className="h-11 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                <span className="w-4 h-4 rounded-[5px] bg-[#0068FF] text-white text-[9px] font-black flex items-center justify-center">Z</span>
+                Zalo
+              </button>
             </div>
 
+            <p className="mt-4 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+              Link chứa toàn bộ địa điểm và ghi chú. Người nhận có thể gộp vào bản đồ của họ hoặc chỉ xem.
+            </p>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
 };
-export default ShareModal;
 
+export default ShareModal;

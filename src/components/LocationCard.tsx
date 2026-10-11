@@ -1,243 +1,264 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Calendar, Trash2, CheckCircle2, Circle, Edit3, Check, X, FileText, Navigation, Map as MapIcon } from 'lucide-react';
+import {
+  Check,
+  CalendarDays,
+  LocateFixed,
+  Navigation,
+  Map as MapIcon,
+  Pencil,
+  Copy,
+  Trash2,
+  Plus,
+} from 'lucide-react';
 import { TravelLocation } from '../types';
+import {
+  daysUntil,
+  describeCountdown,
+  formatDateVi,
+  formatKm,
+  googleMapsDirectionsUrl,
+  splitName,
+} from '../lib/utils';
+import SmartImage from './SmartImage';
+import ActionMenu from './ActionMenu';
 
-interface LocationCardProps {
+export interface LocationItemProps {
   location: TravelLocation;
   isSelected: boolean;
+  distanceKm?: number;
   onSelect: () => void;
-  onNavigate?: () => void;
+  onNavigate: () => void;
   onToggleVisited: () => void;
+  onEdit: () => void;
   onDelete: () => void;
+  onCopyCoords: () => void;
   onUpdateNotes: (notes: string) => void;
+  /** React 19 passes refs as props; AnimatePresence "popLayout" needs it to pop exiting items */
+  ref?: React.Ref<HTMLElement>;
 }
 
-export const LocationCard: React.FC<LocationCardProps> = ({
+/** Date + countdown text shared by card and row. */
+export function dateLabel(location: TravelLocation): { text: string; tone: 'upcoming' | 'past' | 'plain' } | null {
+  if (!location.plannedDate) return null;
+  const date = formatDateVi(location.plannedDate);
+  const days = daysUntil(location.plannedDate);
+  if (location.visited || days === null) return { text: date, tone: 'plain' };
+  return { text: `${date} · ${describeCountdown(days)}`, tone: days >= 0 ? 'upcoming' : 'past' };
+}
+
+export const LocationCard: React.FC<LocationItemProps> = ({
   location,
   isSelected,
+  distanceKm,
   onSelect,
   onNavigate,
   onToggleVisited,
+  onEdit,
   onDelete,
+  onCopyCoords,
   onUpdateNotes,
+  ref,
 }) => {
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
-  const [editedNotes, setEditedNotes] = useState(location.notes);
+  const { title, subtitle } = splitName(location.name);
+  const date = dateLabel(location);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(location.notes);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSaveNotes = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateNotes(editedNotes);
-    setIsEditingNotes(false);
-  };
+  useEffect(() => {
+    if (!editingNotes) setNotesDraft(location.notes);
+  }, [location.notes, editingNotes]);
 
-  const handleCancelNotes = () => {
-    setEditedNotes(location.notes);
-    setIsEditingNotes(false);
+  useEffect(() => {
+    if (editingNotes) {
+      const el = textareaRef.current;
+      el?.focus();
+      el?.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, [editingNotes]);
+
+  const saveNotes = () => {
+    onUpdateNotes(notesDraft.trim());
+    setEditingNotes(false);
   };
 
   return (
-    <motion.div
+    <motion.article
+      ref={ref}
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.15 }}
-      className={`group shrink-0 relative bg-white dark:bg-slate-900 border transition-all duration-300 flex flex-col justify-between rounded-3xl overflow-hidden ${
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.18 }}
+      className={`group relative flex flex-col rounded-3xl bg-white dark:bg-slate-900 overflow-hidden transition-shadow duration-300 ${
         isSelected
-          ? 'border-indigo-500 ring-2 ring-indigo-550/20 dark:ring-indigo-400/20 shadow-md scale-[1.01]'
-          : 'border-slate-100 dark:border-slate-800/60 shadow-sm hover:shadow-md hover:scale-[1.01]'
+          ? 'ring-2 ring-indigo-500 shadow-xl shadow-indigo-500/15'
+          : 'ring-1 ring-slate-200/70 dark:ring-slate-800 shadow-sm hover:shadow-lg hover:shadow-slate-900/5'
       }`}
     >
-      {/* Location Image Header & Badge */}
-      <div className="relative h-40 w-full overflow-hidden shrink-0 border-b border-slate-100 dark:border-slate-800/40">
-        <img
+      {/* Cover image: tap to show on the map */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        aria-label={`Xem ${title} trên bản đồ`}
+        className="relative h-40 overflow-hidden cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+      >
+        <SmartImage
           src={location.image}
           alt={location.name}
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-cover select-none filter contrast-[1.02]"
+          seed={location.id}
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
         />
-        {/* Dark solid overlay at bottom for maximum legibility */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/10 to-black/0 pointer-events-none" />
 
-        {/* Region Tag with sleek material rounded pill borders */}
-        <span className="absolute top-2.5 left-2.5 bg-yellow-400 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+        <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/90 dark:bg-slate-900/80 text-[11px] font-bold text-slate-700 dark:text-slate-200 backdrop-blur-sm shadow-sm">
           {location.region}
         </span>
 
-        {/* Checked/Visited overlay marker - material style */}
-        {location.visited && (
-          <div className="absolute top-2.5 right-2.5 bg-emerald-500 text-white px-2.5 py-0.5 rounded-full shadow-sm z-10 flex items-center gap-1.5 animate-pulse">
-            <span className="text-[9px] font-extrabold uppercase">ĐÃ ĐI</span>
-            <Check className="w-2.5 h-2.5 stroke-[4]" />
+        <div className="absolute bottom-3 left-3.5 right-3.5 text-white pointer-events-none">
+          <h3 className={`text-base font-bold leading-snug line-clamp-1 ${location.visited ? 'opacity-90' : ''}`}>
+            {title}
+          </h3>
+          {subtitle && <p className="text-xs text-white/80 line-clamp-1">{subtitle}</p>}
+        </div>
+      </div>
+
+      {/* Visited toggle doubles as the status badge */}
+      <button
+        onClick={onToggleVisited}
+        aria-pressed={location.visited}
+        title={location.visited ? 'Bỏ đánh dấu đã đi' : 'Đánh dấu đã đi'}
+        className={`absolute top-3 right-3 flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm active:scale-95 transition ${
+          location.visited
+            ? 'bg-emerald-500 text-white'
+            : 'bg-white/90 text-slate-700 hover:bg-white dark:bg-slate-900/80 dark:text-slate-200'
+        }`}
+        id={`toggle-${location.id}`}
+      >
+        <span
+          className={`w-4 h-4 rounded-full flex items-center justify-center ${
+            location.visited ? 'bg-white/25' : 'ring-2 ring-slate-300 dark:ring-slate-500'
+          }`}
+        >
+          {location.visited && <Check className="w-3 h-3 animate-pop" strokeWidth={3.5} />}
+        </span>
+        {location.visited ? 'Đã đi' : 'Chưa đi'}
+      </button>
+
+      <div className="flex-1 flex flex-col gap-3 p-3.5">
+        {(date || distanceKm !== undefined) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {date && (
+              <span
+                className={`inline-flex items-center gap-1 h-6 px-2 rounded-lg text-[11.5px] font-semibold ${
+                  date.tone === 'upcoming'
+                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300'
+                    : date.tone === 'past'
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                {date.text}
+              </span>
+            )}
+            {distanceKm !== undefined && (
+              <span className="inline-flex items-center gap-1 h-6 px-2 rounded-lg text-[11.5px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <LocateFixed className="w-3.5 h-3.5" />
+                Cách {formatKm(distanceKm)}
+              </span>
+            )}
           </div>
         )}
 
-        {/* Name over gradient */}
-        <div className="absolute bottom-2.5 left-3.5 right-3.5 text-white pointer-events-none">
-          <h4 className="text-[7.5px] font-extrabold uppercase tracking-widest text-indigo-300 mb-0.5 font-mono">
-            ★ COORD_PIN
-          </h4>
-          <h3 className="text-xs font-extrabold tracking-tight line-clamp-1 text-slate-50 uppercase font-sans">
-            {location.name}
-          </h3>
-        </div>
-      </div>
-
-      {/* Card Content body */}
-      <div className="p-3.5 flex-1 flex flex-col justify-between space-y-3">
-        
-        {/* Checkbox Visited trigger & Quick details */}
-        <div className="flex items-start gap-2.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleVisited();
-            }}
-            className="mt-0.5 shrink-0 focus:outline-none transition-transform active:scale-90 text-slate-800 dark:text-slate-200 cursor-pointer"
-            title={location.visited ? "Đánh dấu là chưa đi" : "Đánh dấu đã hoàn thành"}
-            id={`toggle-${location.id}`}
-          >
-            {location.visited ? (
-              <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-extrabold text-[9px]">
-                ✔
-              </div>
-            ) : (
-              <div className="w-5 h-5 rounded-full border border-slate-350 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-indigo-500 dark:hover:border-indigo-400 transition" />
-            )}
-          </button>
-
-          <div className="space-y-0.5 select-none flex-1">
-            <p
-              onClick={onSelect}
-              className={`text-xs font-bold leading-tight cursor-pointer hover:text-indigo-500 transition-colors ${
-                location.visited ? 'text-slate-400 dark:text-slate-550 line-through' : 'text-slate-850 dark:text-slate-100'
-              }`}
-            >
-              {location.name}
-            </p>
-            {location.plannedDate && (
-              <div className="flex items-center gap-1 text-[9px] text-slate-500 dark:text-slate-450 font-mono">
-                <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
-                <span>Kế hoạch: {new Date(location.plannedDate).toLocaleDateString('vi-VN')}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Personal Notes (Ghi chú cá nhân) */}
-        <div className="bg-slate-50 dark:bg-slate-850/50 p-2.5 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 flex-1 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-1.5 text-[9px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-widest shrink-0 font-mono">
-            <span className="flex items-center gap-1">
-              <FileText className="w-3 h-3 text-amber-500" />
-              Ghi chú cá nhân:
-            </span>
-            {!isEditingNotes && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEditingNotes(true);
-                }}
-                className="hover:text-indigo-500 p-0.5 border border-transparent transition-colors cursor-pointer"
-                title="Sửa ghi chú"
-              >
-                <Edit3 className="w-2.5 h-2.5" />
-              </button>
-            )}
-          </div>
-
-          {isEditingNotes ? (
-            <form onSubmit={handleSaveNotes} className="space-y-1.5 mt-1">
-              <textarea
-                value={editedNotes}
-                onChange={(e) => setEditedNotes(e.target.value)}
-                rows={2}
-                className="w-full text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100 resize-none font-sans"
-                placeholder="Nhập ghi chú cá nhân..."
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-              <div className="flex justify-end gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCancelNotes();
-                  }}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-200 text-[10px] font-bold cursor-pointer"
-                  title="Hủy"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-                <button
-                  type="submit"
-                  onClick={(e) => e.stopPropagation()}
-                  className="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold cursor-pointer"
-                  title="Lưu"
-                >
-                  <Check className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            </form>
-          ) : (
-            <p className="italic text-slate-600 dark:text-slate-350 text-[10.5px] leading-relaxed break-words line-clamp-3">
-              {location.notes ? `${location.notes}` : 'Chưa có ghi chú nào. Hãy nhập vào ngay nhé!'}
-            </p>
-          )}
-        </div>
-
-        {/* Footer actions - flat material design */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-805/60 dark:border-slate-800/40 flex items-center justify-between gap-1 shrink-0 select-none">
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onNavigate) {
-                  onNavigate();
-                } else {
-                  onSelect();
-                }
+        {/* Notes with quick inline editing */}
+        {editingNotes ? (
+          <div className="space-y-2">
+            <textarea
+              ref={textareaRef}
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveNotes();
+                if (e.key === 'Escape') setEditingNotes(false);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer ${
-                isSelected
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
-              }`}
-              title="Chỉ đường realtime từ vị trí của bạn tới đây"
-            >
-              <Navigation className="w-2.5 h-2.5" />
-              <span>Bay tới</span>
-            </button>
-
-            <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider rounded-full transition cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 dark:text-emerald-400"
-              title="Mở chỉ đường trong Google Maps"
-            >
-              <MapIcon className="w-2.5 h-2.5" />
-              <span>Maps</span>
-            </a>
+              rows={3}
+              placeholder="Món ngon, góc check-in, lưu ý…"
+              className="w-full px-3 py-2.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 text-[15px] sm:text-[13px] leading-relaxed text-slate-800 dark:text-slate-100 outline-none ring-2 ring-indigo-500/40 resize-none"
+            />
+            <div className="flex justify-end gap-1.5">
+              <button
+                onClick={() => setEditingNotes(false)}
+                className="h-8 px-3 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={saveNotes}
+                className="h-8 px-3 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition"
+              >
+                Lưu ghi chú
+              </button>
+            </div>
           </div>
-
+        ) : location.notes ? (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1.5 px-2 rounded-full bg-rose-50/80 hover:bg-rose-100 hover:text-rose-600 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-500 transition cursor-pointer font-bold"
-            title="Xóa địa điểm"
-            id={`delete-${location.id}`}
+            onClick={() => setEditingNotes(true)}
+            title="Chạm để sửa ghi chú"
+            className="group/notes text-left text-[13px] leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-3 rounded-xl -mx-1 px-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {location.notes}
+            <Pencil className="inline w-3 h-3 ml-1.5 -mt-0.5 opacity-0 group-hover/notes:opacity-60 transition" />
           </button>
-        </div>
+        ) : (
+          <button
+            onClick={() => setEditingNotes(true)}
+            className="self-start inline-flex items-center gap-1 text-[13px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Thêm ghi chú
+          </button>
+        )}
 
+        <div className="mt-auto pt-3 flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800">
+          <button
+            onClick={onNavigate}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 transition"
+            title="Chỉ đường realtime từ vị trí của bạn tới đây"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            Bay tới
+          </button>
+          <a
+            href={googleMapsDirectionsUrl(location.lat, location.lng)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 transition"
+            title="Mở chỉ đường trong Google Maps"
+          >
+            <MapIcon className="w-3.5 h-3.5" />
+            Maps
+          </a>
+          <div className="flex-1" />
+          <ActionMenu
+            items={[
+              { label: 'Sửa thông tin', icon: <Pencil className="w-4 h-4" />, onSelect: onEdit },
+              { label: 'Sao chép tọa độ', icon: <Copy className="w-4 h-4" />, onSelect: onCopyCoords },
+              { label: 'Xóa địa điểm', icon: <Trash2 className="w-4 h-4" />, onSelect: onDelete, danger: true },
+            ]}
+          />
+        </div>
       </div>
-    </motion.div>
+    </motion.article>
   );
 };
-export default LocationCard;
 
+export default LocationCard;

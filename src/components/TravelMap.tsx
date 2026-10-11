@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
-import { Search, Loader2, X, MapPin, Sparkles, Navigation, Clock, Minus, ChevronUp } from 'lucide-react';
+import { Search, Loader2, X, Navigation, Clock, Minus, ChevronUp, Layers, LocateFixed, Expand, Check } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { TravelLocation } from '../types';
 
@@ -21,6 +21,16 @@ function removeTones(str: string): string {
   str = str.replace(/Ỳ|Ý|Y|Ỷ|Ỹ/g, "Y");
   str = str.replace(/Đ/g, "D");
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+// Names can come from shared links or external APIs — never inject them as raw HTML
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Haversine distance in meters between two coordinates
@@ -164,6 +174,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
 
   // Set default map type: roadmap, hybrid satellite, or dark mode
   const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'dark'>(isDarkMode ? 'dark' : 'roadmap');
+  const [layersOpen, setLayersOpen] = useState(false);
 
   // Search states for local and online Nominatim inquiries
   const [searchQuery, setSearchQuery] = useState('');
@@ -246,6 +257,8 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     map.on('click', (e: L.LeafletMouseEvent) => {
       onMapClick(e.latlng.lat, e.latlng.lng);
     });
+    // Any map interaction closes the layer picker
+    map.on('movestart click', () => setLayersOpen(false));
 
     // Fire invalidate size several times initially to guarantee total load coverage
     const timer1 = setTimeout(() => map.invalidateSize(), 100);
@@ -280,16 +293,19 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     setMapType(isDarkMode ? 'dark' : 'roadmap');
   }, [isDarkMode]);
 
-  // Handle active selected location panning (from list details trigger)
+  // Recentre only when a *different* place gets selected — editing notes or
+  // ticking "Đã đi" on the current one must not make the map jump.
+  const selectedId = selectedLocation?.id;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedLocation) return;
 
-    map.setView([selectedLocation.lat, selectedLocation.lng], 9, {
+    map.setView([selectedLocation.lat, selectedLocation.lng], Math.max(map.getZoom(), 9), {
       animate: true,
       duration: 1.2,
     });
-  }, [selectedLocation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   // Handle explicit pan trigger (forces re-centering when card locate buttons are clicked again)
   useEffect(() => {
@@ -366,13 +382,13 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       const customIcon = L.divIcon({
         className: 'custom-div-icon',
         html: `
-          <div class="relative flex items-center justify-center ${scale} transition-all duration-300">
+          <div class="group relative flex items-center justify-center ${scale} transition-all duration-300">
             ${isSelected ? `<span class="absolute inline-flex h-10 w-10 rounded-full bg-indigo-500/20 animate-pulse"></span>` : ''}
             <div class="h-6 w-6 rounded-full border-2 border-white shadow-md flex items-center justify-center transition-colors duration-300" style="background-color: ${color}; box-shadow: 0 0 10px ${ringColor}">
               <div class="h-1.5 w-1.5 rounded-full bg-white"></div>
             </div>
-            <div class="absolute -bottom-8 bg-slate-900/90 text-white dark:bg-white dark:text-slate-900 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded shadow-sm opacity-0 hover:opacity-100 md:opacity-40 whitespace-nowrap border dark:border-slate-300 pointer-events-none transition-all duration-200">
-              ${loc.name.split(',')[0]}
+            <div class="absolute -bottom-7 bg-slate-900/85 text-white dark:bg-white dark:text-slate-900 text-[11px] font-semibold px-1.5 py-0.5 rounded-md shadow-sm ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} whitespace-nowrap pointer-events-none transition-opacity duration-200">
+              ${escapeHtml(loc.name.split(',')[0])}
             </div>
           </div>
         `,
@@ -392,39 +408,67 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     });
   }, [locations, selectedLocation]);
 
-  // Update user live/simulated location marker
+  // Update user live location marker (moved in place so the pulse doesn't restart on every GPS tick)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (userMarkerRef.current) {
-      userMarkerRef.current.remove();
+    if (userLat === undefined || userLng === undefined) {
+      userMarkerRef.current?.remove();
       userMarkerRef.current = null;
+      return;
     }
 
-    if (userLat !== undefined && userLng !== undefined) {
-      const userIcon = L.divIcon({
-        className: 'user-location-icon',
-        html: `
-          <div class="relative flex items-center justify-center">
-            <span class="absolute inline-flex h-12 w-12 rounded-full bg-blue-500/40 animate-ping"></span>
-            <div class="h-6 w-6 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center ring-4 ring-blue-500/20">
-              <span class="relative h-2 w-2 rounded-full bg-white"></span>
-            </div>
-            <div class="absolute -top-7 bg-blue-600 text-white text-[9px] font-semibold px-1 rounded shadow whitespace-nowrap">
-              Vị trí của bạn
-            </div>
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([userLat, userLng]);
+      return;
+    }
+
+    const userIcon = L.divIcon({
+      className: 'user-location-icon',
+      html: `
+        <div class="relative flex items-center justify-center">
+          <span class="absolute inline-flex h-12 w-12 rounded-full bg-blue-500/30 animate-ping"></span>
+          <div class="h-5 w-5 rounded-full bg-blue-600 border-[3px] border-white shadow-lg ring-4 ring-blue-500/20"></div>
+          <div class="absolute -top-7 bg-blue-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md shadow whitespace-nowrap">
+            Bạn ở đây
           </div>
-        `,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
+        </div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
 
-      const iconMarker = L.marker([userLat, userLng], { icon: userIcon });
-      iconMarker.addTo(map);
-      userMarkerRef.current = iconMarker;
-    }
+    userMarkerRef.current = L.marker([userLat, userLng], { icon: userIcon, zIndexOffset: 900 }).addTo(map);
   }, [userLat, userLng]);
+
+  // Map helpers for the floating buttons
+  const handleLocateMe = () => {
+    if (!mapRef.current || userLat === undefined || userLng === undefined) return;
+    mapRef.current.setView([userLat, userLng], Math.max(mapRef.current.getZoom(), 14), { animate: true });
+  };
+
+  const handleFitAll = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (locations.length === 0) {
+      map.setView([15.9030623, 105.8066925], 5.5, { animate: true });
+    } else if (locations.length === 1) {
+      map.setView([locations[0].lat, locations[0].lng], 12, { animate: true });
+    } else {
+      map.fitBounds(L.latLngBounds(locations.map((l) => [l.lat, l.lng] as [number, number])), {
+        padding: [48, 48],
+        maxZoom: 13,
+        animate: true,
+      });
+    }
+  };
+
+  const MAP_TYPES: { key: 'roadmap' | 'hybrid' | 'dark'; label: string; swatch: string }[] = [
+    { key: 'roadmap', label: 'Bản đồ', swatch: 'bg-linear-to-br from-emerald-200 via-sky-100 to-amber-100' },
+    { key: 'hybrid', label: 'Vệ tinh', swatch: 'bg-linear-to-br from-emerald-800 via-green-700 to-sky-800' },
+    { key: 'dark', label: 'Tối', swatch: 'bg-linear-to-br from-slate-700 via-slate-800 to-slate-950' },
+  ];
 
   // Realtime turn-by-turn routing: draw the road route from the live GPS
   // position to the navigation target and refresh it as the user moves.
@@ -563,64 +607,95 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       }destination=${navTarget.lat},${navTarget.lng}&travelmode=driving`
     : '#';
 
+  const floatingButton =
+    'w-[34px] h-[34px] rounded-xl flex items-center justify-center bg-white text-slate-700 shadow-[0_4px_14px_-4px_rgba(15,23,42,0.3)] hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 transition';
+  const navSheetOpen = !!navTarget && !navCollapsed;
+
   return (
-    <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-inner border border-slate-200/80 dark:border-slate-800/80 select-none">
-      <div ref={mapContainerRef} className="w-full h-full min-h-[350px] md:min-h-[450px]" />
-      
-      {/* Floating Map Style Selector Pill (Clean, Sleek and elegant overlay below zoom buttons) */}
-      <div className="absolute top-[76px] left-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md px-2 py-1.2 rounded-xl z-[1000] border border-slate-150 dark:border-slate-800 flex items-center gap-1 transition-colors duration-300">
+    // `isolate` keeps Leaflet's high z-indexes inside the map so they never cover the sticky header
+    <div className="relative isolate w-full h-full overflow-hidden select-none">
+      <div ref={mapContainerRef} className="w-full h-full" />
+
+      {/* Layer switcher (below Leaflet's zoom buttons) */}
+      <div className="absolute top-[88px] left-[10px] z-[1000]">
         <button
-          onClick={() => setMapType('roadmap')}
-          className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-tight cursor-pointer transition-all ${
-            mapType === 'roadmap'
-              ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold'
-          }`}
+          onClick={() => setLayersOpen((o) => !o)}
+          className={floatingButton}
+          title="Đổi kiểu bản đồ"
+          aria-label="Đổi kiểu bản đồ"
+          aria-expanded={layersOpen}
         >
-          Google Map
+          <Layers className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => setMapType('hybrid')}
-          className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-tight cursor-pointer transition-all ${
-            mapType === 'hybrid'
-              ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold'
-          }`}
-        >
-          Vệ tinh
-        </button>
-        <button
-          onClick={() => setMapType('dark')}
-          className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-tight cursor-pointer transition-all ${
-            mapType === 'dark'
-              ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold'
-          }`}
-        >
-          Bản đồ Tối
-        </button>
+        {layersOpen && (
+          <div className="absolute left-[42px] top-0 p-1.5 rounded-2xl bg-white dark:bg-slate-900 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 flex gap-1.5 animate-fade-in">
+            {MAP_TYPES.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => {
+                  setMapType(t.key);
+                  setLayersOpen(false);
+                }}
+                className={`relative w-16 rounded-xl p-1 text-[11px] font-semibold transition ${
+                  mapType === t.key
+                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span className={`block h-10 rounded-lg ${t.swatch} ring-1 ring-black/5`} />
+                <span className="block mt-1">{t.label}</span>
+                {mapType === t.key && (
+                  <Check className="absolute top-2 right-2 w-3.5 h-3.5 text-white drop-shadow" strokeWidth={3} />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Locate me / fit all (bottom-right, thumb friendly) */}
+      {!navSheetOpen && (
+        <div className="absolute right-[10px] bottom-8 z-[1000] flex flex-col gap-2">
+          <button
+            onClick={handleFitAll}
+            className={floatingButton}
+            title="Xem tất cả địa điểm"
+            aria-label="Xem tất cả địa điểm"
+          >
+            <Expand className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleLocateMe}
+            disabled={userLat === undefined}
+            className={`${floatingButton} text-blue-600 dark:text-blue-400`}
+            title={userLat === undefined ? 'Chưa có tín hiệu GPS' : 'Về vị trí của tôi'}
+            aria-label="Về vị trí của tôi"
+          >
+            <LocateFixed className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Floating Address Search Bar Overlay */}
-      <div ref={searchContainerRef} className="absolute top-3 right-3 z-[1000] w-64 sm:w-72 md:w-80">
-        <form onSubmit={handleOnlineSearch} className="relative flex items-center shadow-md rounded-xl overflow-hidden border border-slate-200 bg-white/95 dark:bg-slate-900/95 dark:border-slate-800 backdrop-blur transition-all duration-300">
+      <div ref={searchContainerRef} className="absolute top-[10px] right-[10px] z-[1000] w-[min(18rem,calc(100%-4.5rem))] sm:w-72 md:w-80">
+        <form onSubmit={handleOnlineSearch} className="relative flex items-center rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-[0_4px_14px_-4px_rgba(15,23,42,0.3)] ring-1 ring-slate-900/5 dark:ring-white/10 transition-all duration-300">
           <div className="absolute left-3 text-slate-400">
             {searchLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
             ) : (
-              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500" />
             )}
           </div>
           <input
             type="text"
-            placeholder="Tìm địa danh du lịch (Huế, Đà Lạt...)"
+            placeholder="Tìm địa danh (Huế, Đà Lạt…)"
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setShowSuggestions(true);
             }}
             onFocus={() => setShowSuggestions(true)}
-            className="w-full pl-8.5 pr-14 py-2 text-[11px] bg-transparent border-none outline-none focus:ring-0 text-slate-800 dark:text-white"
+            className="w-full h-[34px] pl-9 pr-16 text-base sm:text-[13px] bg-transparent border-none outline-none focus:ring-0 text-slate-800 dark:text-white placeholder:text-slate-400"
           />
           {searchQuery && (
             <button
@@ -634,15 +709,16 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                   tempMarkerRef.current = null;
                 }
               }}
-              className="absolute right-10 text-slate-450 hover:text-slate-600 dark:hover:text-slate-200 transition"
+              className="absolute right-[50px] w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition"
+              aria-label="Xóa tìm kiếm"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
           <button
             type="submit"
             disabled={!searchQuery.trim() || searchLoading}
-            className="absolute right-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600 text-white rounded-lg text-[9px] font-bold transition cursor-pointer"
+            className="absolute right-1 h-[26px] px-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600 text-white rounded-lg text-xs font-semibold transition"
           >
             Tìm
           </button>
@@ -651,15 +727,15 @@ export const TravelMap: React.FC<TravelMapProps> = ({
         {/* Suggestion Dropdown List */}
         <AnimatePresence>
           {showSuggestions && (searchQuery.trim().length > 0) && (localFiltered.length > 0 || searchResults.length > 0 || searchLoading) && (
-            <div className="absolute top-9.5 left-0 right-0 max-h-56 overflow-y-auto bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl backdrop-blur-md z-[1001] divide-y divide-slate-100 dark:divide-slate-800/60 custom-scrollbar select-none">
-              
+            <div className="absolute top-[42px] left-0 right-0 max-h-64 overflow-y-auto bg-white dark:bg-slate-900 ring-1 ring-slate-900/5 dark:ring-white/10 rounded-2xl shadow-xl z-[1001] divide-y divide-slate-100 dark:divide-slate-800/60 select-none">
+
               {/* Local Matches in current itinerary */}
               {localFiltered.length > 0 && (
                 <div className="p-1.5">
-                  <span className="px-2 py-0.5 text-[8px] uppercase tracking-wider font-extrabold text-indigo-500 dark:text-indigo-400 block">
-                    Trong lịch trình của bạn ({localFiltered.length})
+                  <span className="px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 block">
+                    Trong danh sách của bạn ({localFiltered.length})
                   </span>
-                  <div className="space-y-0.5 mt-1">
+                  <div className="space-y-0.5">
                     {localFiltered.map(loc => (
                       <button
                         key={loc.id}
@@ -670,13 +746,13 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                           setShowSuggestions(false);
                           setSearchQuery('');
                         }}
-                        className="w-full text-left px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-[10px] font-bold transition flex items-center justify-between group cursor-pointer"
+                        className="w-full text-left px-2 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-[13px] font-medium transition flex items-center justify-between gap-2 group"
                       >
-                        <span className="text-slate-800 dark:text-slate-200 truncate pr-2">
+                        <span className="text-slate-800 dark:text-slate-200 truncate">
                           📌 {loc.name}
                         </span>
-                        <span className="text-[8px] text-emerald-600 dark:text-emerald-400 font-mono shrink-0 group-hover:underline">
-                          Bay tới
+                        <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shrink-0 group-hover:underline">
+                          Xem
                         </span>
                       </button>
                     ))}
@@ -687,13 +763,13 @@ export const TravelMap: React.FC<TravelMapProps> = ({
               {/* Online OSM/Nominatim Results */}
               {(searchResults.length > 0 || searchLoading) && (
                 <div className="p-1.5">
-                  <span className="px-2 py-0.5 text-[8px] uppercase tracking-wider font-extrabold text-violet-500 dark:text-violet-400 block">
-                    Kết quả trực tuyến (OpenStreetMap)
+                  <span className="px-2 py-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 block">
+                    Kết quả trên bản đồ (OpenStreetMap)
                   </span>
                   {searchLoading ? (
-                    <div className="px-3 py-2 text-[9px] text-slate-400 dark:text-slate-500 animate-pulse flex items-center gap-1.5">
-                      <Loader2 className="w-3 h-3 animate-spin text-violet-500" />
-                      Đang tìm kiếm trên bản đồ Việt Nam...
+                    <div className="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" />
+                      Đang tìm kiếm…
                     </div>
                   ) : (
                     <div className="space-y-0.5 mt-1">
@@ -733,14 +809,18 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                                 const marker = L.marker([lat, lng], { icon: searchIcon }).addTo(mapRef.current);
                                 
                                 const popupContent = document.createElement('div');
-                                popupContent.className = 'p-1 text-xs text-slate-800 dark:text-slate-100 space-y-1.5';
-                                popupContent.innerHTML = `
-                                  <div class="font-extrabold leading-tight text-slate-900">${simplified}</div>
-                                  <div class="text-[9px] text-slate-500 leading-normal">Bạn muốn thêm địa danh này vào lịch trình?</div>
-                                  <button class="add-preset-btn w-full px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] uppercase font-extrabold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1">
-                                    ➕ Thêm Địa Điểm
-                                  </button>
-                                `;
+                                popupContent.className = 'p-0.5 text-xs text-slate-800 space-y-2';
+                                const title = document.createElement('div');
+                                title.className = 'font-bold text-[13px] leading-snug text-slate-900';
+                                title.textContent = simplified; // textContent: place names come from an external API
+                                popupContent.appendChild(title);
+                                popupContent.insertAdjacentHTML(
+                                  'beforeend',
+                                  `<div class="text-[11px] text-slate-500 leading-normal">Thêm địa danh này vào danh sách của bạn?</div>
+                                  <button class="add-preset-btn w-full h-8 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1">
+                                    ＋ Thêm địa điểm
+                                  </button>`
+                                );
 
                                 popupContent.querySelector('.add-preset-btn')?.addEventListener('click', () => {
                                   onMapClick(lat, lng);
@@ -753,12 +833,12 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                               
                               setShowSuggestions(false);
                             }}
-                            className="w-full text-left px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-[10px] transition cursor-pointer"
+                            className="w-full text-left px-2 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
                           >
-                            <div className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                            <div className="text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">
                               🔍 {simplified}
                             </div>
-                            <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
                               {displayName}
                             </div>
                           </button>
@@ -771,8 +851,8 @@ export const TravelMap: React.FC<TravelMapProps> = ({
 
               {/* No results prompt */}
               {!searchLoading && localFiltered.length === 0 && searchResults.length === 0 && (
-                <div className="px-3 py-3 text-center text-[10px] text-slate-500 dark:text-slate-400">
-                  Gõ từ khóa & nhấn <b>Tìm</b> để tra cứu địa danh trực tuyến hoặc lưu trữ nội bộ.
+                <div className="px-3 py-3 text-center text-xs text-slate-500 dark:text-slate-400">
+                  Nhấn <b>Tìm</b> để tra cứu địa danh trên bản đồ.
                 </div>
               )}
             </div>
@@ -780,40 +860,36 @@ export const TravelMap: React.FC<TravelMapProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Map Control Info Badges */}
-      <div className="absolute bottom-3 left-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md px-3 py-1.5 rounded-lg text-[11px] font-medium z-[1000] border border-slate-100 dark:border-slate-850 pointer-events-none flex items-center space-x-3 transition-colors duration-300">
-        <div className="flex items-center space-x-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span>
-          <span className="text-slate-600 dark:text-slate-300">Định ghé thăm</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
-          <span className="text-slate-600 dark:text-slate-300">Đã hoàn thành</span>
-        </div>
-        {userLat !== undefined && (
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>
-            <span className="text-blue-600 dark:text-blue-400 font-bold">GPS Hiện tại</span>
-          </div>
-        )}
-      </div>
-      
+      {/* Compact legend */}
       {!navTarget && (
-        <div className="absolute bottom-3 right-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-md px-2.5 py-1.4 rounded-md text-[9px] text-slate-500 dark:text-slate-400 z-[1000] border border-slate-100 dark:border-slate-800 pointer-events-none select-none transition-colors duration-300">
-          💡 Click bản đồ để ghim tọa độ mới!
+        <div className="absolute bottom-3 left-3 z-[1000] pointer-events-none flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-[0_4px_14px_-4px_rgba(15,23,42,0.3)] text-[11px] font-medium text-slate-600 dark:text-slate-300">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 ring-2 ring-orange-500/20" />
+            Chưa đi
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+            Đã đi
+          </span>
+          {userLat !== undefined && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 ring-2 ring-blue-500/20" />
+              Bạn
+            </span>
+          )}
         </div>
       )}
 
       {/* Collapsed navigation pill — keeps the map fully visible */}
       {navTarget && navCollapsed && (
-        <div className="absolute bottom-3 left-3 z-[1002] flex items-center gap-1 bg-indigo-600 text-white rounded-full shadow-2xl border border-white/20 pl-1 pr-1 py-1">
+        <div className="absolute bottom-3 left-3 z-[1002] flex items-center gap-1 bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-full shadow-2xl ring-1 ring-white/20 pl-1 pr-1 py-1">
           <button
             onClick={() => setNavCollapsed(false)}
-            className="flex items-center gap-2 pl-2 pr-1 py-0.5 cursor-pointer"
+            className="flex items-center gap-2 pl-2 pr-1 py-1"
             title="Mở lại bảng chỉ đường"
           >
             <Navigation className="w-3.5 h-3.5 shrink-0" />
-            <span className="text-[11px] font-bold font-mono whitespace-nowrap">
+            <span className="text-xs font-bold whitespace-nowrap tabular-nums">
               {routeInfo
                 ? `${formatDistance(routeInfo.distance)} · ${formatDuration(routeInfo.duration)}`
                 : 'Chỉ đường'}
@@ -822,7 +898,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
           </button>
           <button
             onClick={() => onStopNavigation?.()}
-            className="w-6 h-6 rounded-full hover:bg-white/25 flex items-center justify-center transition cursor-pointer shrink-0"
+            className="w-7 h-7 rounded-full hover:bg-white/25 flex items-center justify-center transition shrink-0"
             title="Kết thúc chỉ đường"
           >
             <X className="w-3 h-3" />
@@ -833,43 +909,45 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       {/* Realtime navigation bottom sheet (Google-Maps style directions) */}
       {navTarget && !navCollapsed && (
         <div className="absolute bottom-0 left-0 right-0 z-[1002] p-2.5 sm:p-3">
-          <div className="bg-white/97 dark:bg-slate-900/97 backdrop-blur rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl ring-1 ring-slate-900/5 dark:ring-white/10 overflow-hidden">
             {/* Header: destination + live summary */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-indigo-600 text-white">
-              <span className="shrink-0 w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
+            <div className="flex items-center gap-2.5 px-3.5 py-3 bg-linear-to-r from-indigo-600 to-violet-600 text-white">
+              <span className="shrink-0 w-9 h-9 rounded-2xl bg-white/15 flex items-center justify-center">
                 <Navigation className="w-4 h-4" />
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-extrabold truncate leading-tight">
+                <div className="text-sm font-bold truncate leading-tight">
                   Chỉ đường tới {navTarget.name.split(',')[0]}
                 </div>
-                <div className="text-[10px] opacity-90 leading-tight mt-0.5">
+                <div className="text-xs opacity-90 leading-tight mt-1">
                   {routeInfo ? (
-                    <span className="inline-flex items-center gap-2 font-mono font-bold">
+                    <span className="inline-flex items-center gap-2.5 font-semibold tabular-nums">
                       <span>🚗 {formatDistance(routeInfo.distance)}</span>
                       <span className="inline-flex items-center gap-0.5">
-                        <Clock className="w-2.5 h-2.5" /> {formatDuration(routeInfo.duration)}
+                        <Clock className="w-3 h-3" /> {formatDuration(routeInfo.duration)}
                       </span>
                     </span>
                   ) : routeLoading ? (
                     <span className="inline-flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Đang tính tuyến đường...
+                      <Loader2 className="w-3 h-3 animate-spin" /> Đang tính tuyến đường…
                     </span>
+                  ) : routeError ? (
+                    <span>Chưa có tuyến đường</span>
                   ) : (
-                    <span>Đang chuẩn bị chỉ đường...</span>
+                    <span>Đang chuẩn bị chỉ đường…</span>
                   )}
                 </div>
               </div>
               <button
                 onClick={() => setNavCollapsed(true)}
-                className="shrink-0 w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition cursor-pointer"
+                className="shrink-0 w-8 h-8 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition"
                 title="Thu gọn bảng (chỉ xem bản đồ)"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => onStopNavigation?.()}
-                className="shrink-0 w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition cursor-pointer"
+                className="shrink-0 w-8 h-8 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition"
                 title="Kết thúc chỉ đường"
               >
                 <X className="w-3.5 h-3.5" />
@@ -878,19 +956,19 @@ export const TravelMap: React.FC<TravelMapProps> = ({
 
             {/* Turn-by-turn steps */}
             {routeError ? (
-              <div className="px-3 py-2.5 text-[10.5px] text-rose-500 dark:text-rose-400 font-medium">
+              <div className="px-3.5 py-3 text-[13px] text-rose-600 dark:text-rose-400 font-medium">
                 {routeError}
               </div>
             ) : routeInfo && routeInfo.steps.length > 0 ? (
-              <div className="max-h-32 sm:max-h-40 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800/60">
+              <div className="max-h-36 sm:max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
                 {routeInfo.steps.map((step, idx) => (
-                  <div key={idx} className="flex items-center gap-2.5 px-3 py-1.5">
-                    <span className="shrink-0 text-sm leading-none">{stepEmoji(step)}</span>
-                    <span className="flex-1 text-[10.5px] text-slate-700 dark:text-slate-200 truncate font-medium">
+                  <div key={idx} className="flex items-center gap-3 px-3.5 py-2">
+                    <span className="shrink-0 text-base leading-none">{stepEmoji(step)}</span>
+                    <span className="flex-1 text-[13px] text-slate-700 dark:text-slate-200 truncate font-medium">
                       {translateStep(step)}
                     </span>
                     {step.distance > 0 && (
-                      <span className="shrink-0 text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                      <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-400 dark:text-slate-500">
                         {formatDistance(step.distance)}
                       </span>
                     )}
@@ -898,8 +976,8 @@ export const TravelMap: React.FC<TravelMapProps> = ({
                 ))}
               </div>
             ) : (
-              <div className="px-3 py-2.5 text-[10.5px] text-slate-400 dark:text-slate-500">
-                {routeLoading ? 'Đang tải hướng dẫn từng chặng...' : 'Chưa có dữ liệu chỉ đường.'}
+              <div className="px-3.5 py-3 text-[13px] text-slate-400 dark:text-slate-500">
+                {routeLoading ? 'Đang tải hướng dẫn từng chặng…' : 'Chưa có dữ liệu chỉ đường.'}
               </div>
             )}
 
@@ -908,9 +986,9 @@ export const TravelMap: React.FC<TravelMapProps> = ({
               href={googleMapsUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider border-t border-slate-100 dark:border-slate-800 transition cursor-pointer"
+              className="flex items-center justify-center gap-1.5 h-11 px-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-emerald-700 dark:text-emerald-400 text-[13px] font-semibold border-t border-slate-100 dark:border-slate-800 transition"
             >
-              <Navigation className="w-3 h-3" />
+              <Navigation className="w-3.5 h-3.5" />
               Mở điều hướng Google Maps
             </a>
           </div>

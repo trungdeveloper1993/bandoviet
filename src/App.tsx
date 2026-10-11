@@ -1,190 +1,126 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Smile,
-  MapPin,
-  Search,
-  Plus,
-  Trash2,
-  Moon,
-  Sun,
   Map as MapIcon,
-  Download,
-  Share2,
-  RefreshCw,
-  Sparkles,
-  Award,
-  Filter,
-  AlertCircle,
   Maximize2,
   Minimize2,
-  Save,
-  Upload
+  Sparkles,
+  SearchX,
+  Plus,
+  RotateCcw,
+  FolderOpen,
+  Share2,
+  X,
 } from 'lucide-react';
 import { TravelLocation, Region } from './types';
 import { DEFAULT_LOCATIONS } from './data/defaultLocations';
+import {
+  copyText,
+  createId,
+  distanceKm,
+  formatDateVi,
+  isDesktopLayout,
+  locationsFromCSV,
+  locationsToCSV,
+  mergeLocations,
+  normalizeSearch,
+  parseLocalDate,
+  saveFile,
+  splitName,
+} from './lib/utils';
+import { useToasts } from './hooks/useToasts';
+import { useLocalStorageState } from './hooks/useLocalStorageState';
+import { useScrollSpy } from './hooks/useScrollSpy';
 import TravelMap from './components/TravelMap';
 import AddLocationModal from './components/AddLocationModal';
+import EditLocationModal from './components/EditLocationModal';
 import LocationCard from './components/LocationCard';
+import LocationRow from './components/LocationRow';
 import ShareModal from './components/ShareModal';
+import AppHeader from './components/AppHeader';
+import ToolsMenu from './components/ToolsMenu';
+import StatsHero from './components/StatsHero';
+import FilterBar, { SortKey, StatusFilter, ViewMode, SORT_LABELS } from './components/FilterBar';
+import BottomNav, { SectionId } from './components/BottomNav';
+import ConfirmDialog, { ConfirmOptions } from './components/ConfirmDialog';
+import Toaster from './components/Toaster';
 
-// CSV column order used for import/export of the itinerary
-const CSV_HEADERS = [
-  'name', 'region', 'lat', 'lng', 'visited', 'notes', 'plannedDate', 'image', 'id', 'createdAt',
-];
+const STORAGE_KEY = 'vietnam_travel_locations';
+const SECTIONS: SectionId[] = ['tong-quan', 'ban-do', 'dia-diem'];
 
-// Quote a value for safe CSV output
-function csvEscape(value: unknown): string {
-  const s = value === undefined || value === null ? '' : String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-// Minimal RFC-4180 style CSV parser (handles quotes, commas and newlines in fields)
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += c;
-      }
-    } else if (c === '"') {
-      inQuotes = true;
-    } else if (c === ',') {
-      row.push(field);
-      field = '';
-    } else if (c === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else if (c !== '\r') {
-      field += c;
+function loadLocations(): TravelLocation[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
     }
+  } catch (e) {
+    console.error(e);
   }
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
-}
-
-// Helper function to convert Vietnamese text to accents-free format for accurate matches
-function removeVietnameseTones(str: string): string {
-  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
-  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
-  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
-  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
-  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
-  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
-  str = str.replace(/đ/g, "d");
-  str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
-  str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
-  str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
-  str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
-  str = str.replace(/Ù|Ú|Ụ|Ủ|U|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
-  str = str.replace(/Ỳ|Ý|Y|Ỷ|Ỹ/g, "Y");
-  str = str.replace(/Đ/g, "D");
-  
-  // Normalize system combining characters
-  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return DEFAULT_LOCATIONS;
 }
 
 export default function App() {
-  // Initialize locations with standard localStorage and fallbacks
-  const [locations, setLocations] = useState<TravelLocation[]>(() => {
-    const saved = localStorage.getItem('vietnam_travel_locations');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return DEFAULT_LOCATIONS;
-  });
-
-  // User interface options
+  // ---------------------------------------------------------------- state
+  const [locations, setLocations] = useState<TravelLocation[]>(loadLocations);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('travel_dark_mode');
     if (saved) return saved === 'true';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  const [selectedLocation, setSelectedLocation] = useState<TravelLocation | null>(null);
+  // Selection/navigation/editing are stored by id so they never go stale
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [navTargetId, setNavTargetId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Active realtime navigation target (the place to route to)
-  const [navTarget, setNavTarget] = useState<TravelLocation | null>(null);
+  // List controls (sort & view are remembered between visits)
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [region, setRegion] = useState<Region>('Tất cả');
+  const [sort, setSort] = useLocalStorageState<SortKey>('cam_on_nhe_sort', 'recent', (v) =>
+    typeof v === 'string' && v in SORT_LABELS
+  );
+  const [view, setView] = useLocalStorageState<ViewMode>('cam_on_nhe_view', 'grid', (v) => v === 'grid' || v === 'list');
 
-  // Fullscreen map mode (useful on small devices)
+  // Overlays
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
-
-  // Hidden file input used for importing a CSV itinerary
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  const [regionFilter, setRegionFilter] = useState<Region>('Tất cả');
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Custom Modals/Drawers
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  
-  // Coordinates passed upon clicking on map to pre-fill standard forms
+  const [shareUrl, setShareUrl] = useState('');
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsAnchor, setToolsAnchor] = useState<DOMRect | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmOptions | null>(null);
+  const [sharedItineraryToImport, setSharedItineraryToImport] = useState<TravelLocation[] | null>(null);
+
+  // Map interaction
   const [clickedLat, setClickedLat] = useState<number | undefined>(undefined);
   const [clickedLng, setClickedLng] = useState<number | undefined>(undefined);
-
-  // User real location coordinates (GPS tracking)
+  const [mapPanTrigger, setMapPanTrigger] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
   const [userLng, setUserLng] = useState<number | undefined>(undefined);
 
-  // Sharing links
-  const [shareUrl, setShareUrl] = useState('');
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const { toasts, show: showToast, dismiss: dismissToast } = useToasts();
+  const activeSection = useScrollSpy(SECTIONS);
 
-  // Floating import request state (when loading shared itinerary)
-  const [sharedItineraryToImport, setSharedItineraryToImport] = useState<TravelLocation[] | null>(null);
+  const selectedLocation = useMemo(() => locations.find((l) => l.id === selectedId) ?? null, [locations, selectedId]);
+  const navTarget = useMemo(() => locations.find((l) => l.id === navTargetId) ?? null, [locations, navTargetId]);
+  const editingLocation = useMemo(() => locations.find((l) => l.id === editingId) ?? null, [locations, editingId]);
 
-  // Map panning trigger mechanism (forces leaflet view reset on clicking map locate regardless of equality)
-  const [mapPanTrigger, setMapPanTrigger] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
-
-  // Elegant floating notification alerts & confirm modals (iframe-safe)
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    type: 'danger' | 'warning' | 'info';
-    onConfirm: () => void;
-  } | null>(null);
-
-  const [alertDialog, setAlertDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-  } | null>(null);
-
-  // Core Sync to local storage
+  // -------------------------------------------------------------- effects
   useEffect(() => {
-    localStorage.setItem('vietnam_travel_locations', JSON.stringify(locations));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+    } catch (e) {
+      console.error(e);
+    }
   }, [locations]);
 
-  // Dark Mode side effects
   useEffect(() => {
     localStorage.setItem('travel_dark_mode', String(isDarkMode));
-    const rootElement = document.documentElement;
-    if (isDarkMode) {
-      rootElement.classList.add('dark');
-    } else {
-      rootElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
   // Continuously track the user's GPS position (realtime) for live navigation
@@ -196,14 +132,14 @@ export default function App() {
         setUserLng(position.coords.longitude);
       },
       (error) => {
-        console.warn("Quyền định vị bị tắt hoặc xảy ra lỗi GPS: ", error);
+        console.warn('Quyền định vị bị tắt hoặc xảy ra lỗi GPS: ', error);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
-  // Allow ESC to exit fullscreen map mode
+  // ESC exits the fullscreen map
   useEffect(() => {
     if (!isMapFullscreen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -213,568 +149,430 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isMapFullscreen]);
 
-  // Detect and import shared itinerary query strings (?itinerary=base64)
+  // Detect a shared itinerary in the URL (?itinerary=base64)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const itineraryData = params.get('itinerary');
-    if (itineraryData) {
-      try {
-        // Base64 decode supporting unicode/vietnamese accents safely
-        const decodedString = decodeURIComponent(escape(atob(itineraryData)));
-        const parsedLocations = JSON.parse(decodedString) as TravelLocation[];
-        if (Array.isArray(parsedLocations) && parsedLocations.length > 0) {
-          setSharedItineraryToImport(parsedLocations);
-          // Clear query parameters in url bar silently to keep URL elegant
-          const newUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
-        }
-      } catch (err) {
-        console.warn('Sai định dạng tệp chia sẻ: ', err);
+    if (!itineraryData) return;
+    try {
+      const decoded = decodeURIComponent(escape(atob(itineraryData)));
+      const parsed = JSON.parse(decoded) as TravelLocation[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setSharedItineraryToImport(parsed);
+        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
       }
+    } catch (err) {
+      console.warn('Sai định dạng liên kết chia sẻ: ', err);
     }
   }, []);
 
-  // Update dynamic sharing URL
-  const handleOpenShare = () => {
-    try {
-      // Serialize current itinerary state to base64 safely
-      const serialized = btoa(unescape(encodeURIComponent(JSON.stringify(locations))));
-      const computedUrl = `${window.location.origin}${window.location.pathname}?itinerary=${serialized}`;
-      setShareUrl(computedUrl);
-      setIsShareOpen(true);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // Confirm Import Shared list
-  const handleConfirmImport = () => {
-    if (sharedItineraryToImport) {
-      // Generate fresh ids to dodge potential collisions
-      const imported = sharedItineraryToImport.map(loc => ({
-        ...loc,
-        id: loc.id + '_shared_' + Math.random().toString(36).substring(2, 7),
-        createdAt: new Date().toISOString()
-      }));
-      setLocations(imported);
-      setSharedItineraryToImport(null);
-      setSelectedLocation(imported[0] || null);
-      if (imported[0]) {
-        setMapPanTrigger({ lat: imported[0].lat, lng: imported[0].lng, timestamp: Date.now() });
-      }
-    }
-  };
-
-  // Toggle checklist completed trip
-  const handleToggleVisited = (id: string) => {
-    setLocations(prev =>
-      prev.map(loc => (loc.id === id ? { ...loc, visited: !loc.visited } : loc))
-    );
-    // If the active highlighted pinpoint is updated, sync state details
-    if (selectedLocation?.id === id) {
-      setSelectedLocation(prev => prev ? { ...prev, visited: !prev.visited } : null);
-    }
-  };
-
-  // Delete elements via secure inline state dialog (completely iframe safe)
-  const handleDeleteLocation = (id: string) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Xóa địa điểm',
-      message: 'Bạn có chắc chắn muốn xóa địa điểm này ra khỏi hành trình danh lam thắng cảnh Việt Nam? Hành động này không thể hoàn tác.',
-      type: 'danger',
-      onConfirm: () => {
-        setLocations(prev => prev.filter(loc => loc.id !== id));
-        if (selectedLocation?.id === id) {
-          setSelectedLocation(null);
-        }
-        if (navTarget?.id === id) {
-          setNavTarget(null);
-        }
-        setConfirmDialog(null);
-      }
+  // ------------------------------------------------------------- derived
+  // Distances refresh only when the user moves ~100 m, to keep the list calm
+  const gpsKey = userLat !== undefined && userLng !== undefined ? `${userLat.toFixed(3)},${userLng.toFixed(3)}` : '';
+  const distances = useMemo(() => {
+    const result: Record<string, number> = {};
+    if (!gpsKey) return result;
+    const [glat, glng] = gpsKey.split(',').map(Number);
+    locations.forEach((l) => {
+      result[l.id] = distanceKm(glat, glng, l.lat, l.lng);
     });
-  };
+    return result;
+  }, [locations, gpsKey]);
+  const hasGps = gpsKey !== '';
 
-  // Clear Checked elements ("Xóa dữ liệu điểm đã ghim đã đi")
-  const handleClearVisited = () => {
-    const completedCount = locations.filter(l => l.visited).length;
-    if (completedCount === 0) {
-      setAlertDialog({
-        isOpen: true,
-        title: 'Dọn dẹp trống',
-        message: 'Hiện không có địa điểm nào được đánh dấu là "Đã hoàn thành" để dọn dẹp khỏi hành trình!'
-      });
+  const counts = useMemo(
+    () => ({
+      all: locations.length,
+      todo: locations.filter((l) => !l.visited).length,
+      done: locations.filter((l) => l.visited).length,
+    }),
+    [locations]
+  );
+
+  const regionCounts = useMemo(() => {
+    const result: Record<string, number> = {};
+    locations.forEach((l) => {
+      result[l.region] = (result[l.region] ?? 0) + 1;
+    });
+    return result;
+  }, [locations]);
+
+  const filteredLocations = useMemo(() => {
+    const q = normalizeSearch(search);
+    const list = locations.filter((l) => {
+      if (status === 'todo' && l.visited) return false;
+      if (status === 'done' && !l.visited) return false;
+      if (region !== 'Tất cả' && l.region !== region) return false;
+      if (!q) return true;
+      return normalizeSearch(l.name).includes(q) || normalizeSearch(l.notes || '').includes(q);
+    });
+
+    const effectiveSort = sort === 'distance' && !hasGps ? 'recent' : sort;
+    if (effectiveSort === 'name') {
+      return [...list].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    }
+    if (effectiveSort === 'date') {
+      const time = (l: TravelLocation) => parseLocalDate(l.plannedDate)?.getTime() ?? Infinity;
+      return [...list].sort((a, b) => time(a) - time(b));
+    }
+    if (effectiveSort === 'distance') {
+      return [...list].sort((a, b) => (distances[a.id] ?? Infinity) - (distances[b.id] ?? Infinity));
+    }
+    return list; // 'recent': newest additions are kept at the front of the array
+  }, [locations, search, status, region, sort, distances, hasGps]);
+
+  const hasActiveFilters = search.trim() !== '' || status !== 'all' || region !== 'Tất cả';
+  const visitedCount = counts.done;
+  const completedPercent = counts.all ? Math.round((counts.done / counts.all) * 100) : 0;
+
+  // ------------------------------------------------------------- helpers
+  const scrollToSection = useCallback((id: SectionId) => {
+    if (id === 'tong-quan') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Xóa tất cả điểm đã đi',
-      message: `Bạn có chắc chắn muốn dọn dẹp và xóa hoàn toàn ${completedCount} danh lam đã ghim "Đã hoàn thành"?`,
-      type: 'danger',
-      onConfirm: () => {
-        setLocations(prev => prev.filter(loc => !loc.visited));
-        if (selectedLocation?.visited) {
-          setSelectedLocation(null);
-        }
-        setConfirmDialog(null);
-      }
+  /** On phones the map sits above the list, so bring it into view after an action. */
+  const revealMap = useCallback(() => {
+    if (!isDesktopLayout() && !isMapFullscreen) scrollToSection('ban-do');
+  }, [isMapFullscreen, scrollToSection]);
+
+  const titleOf = (loc: TravelLocation) => splitName(loc.name).title;
+
+  const clearFilters = () => {
+    setSearch('');
+    setStatus('all');
+    setRegion('Tất cả');
+  };
+
+  // ------------------------------------------------------------- actions
+  const handleSelect = (loc: TravelLocation) => {
+    setSelectedId(loc.id);
+    setMapPanTrigger({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() });
+    revealMap();
+  };
+
+  const handleNavigate = (loc: TravelLocation) => {
+    setSelectedId(loc.id);
+    setNavTargetId(loc.id);
+    revealMap();
+  };
+
+  const handleToggleVisited = (id: string) => {
+    const loc = locations.find((l) => l.id === id);
+    if (!loc) return;
+    setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, visited: !l.visited } : l)));
+    if (!loc.visited) showToast(`🎉 Đã chinh phục ${titleOf(loc)}!`);
+  };
+
+  const handleDelete = (id: string) => {
+    const index = locations.findIndex((l) => l.id === id);
+    if (index < 0) return;
+    const removed = locations[index];
+    setLocations((prev) => prev.filter((l) => l.id !== id));
+    if (selectedId === id) setSelectedId(null);
+    if (navTargetId === id) setNavTargetId(null);
+    if (editingId === id) setEditingId(null);
+    showToast(`Đã xóa “${titleOf(removed)}”`, {
+      tone: 'info',
+      actionLabel: 'Hoàn tác',
+      onAction: () =>
+        setLocations((prev) =>
+          prev.some((l) => l.id === removed.id)
+            ? prev
+            : [...prev.slice(0, index), removed, ...prev.slice(index)]
+        ),
     });
   };
 
-  // Insert location
-  const handleAddLocation = (newLocDetails: Omit<TravelLocation, 'id' | 'createdAt'>) => {
+  /** Replace the whole list but keep an undo for a few seconds. */
+  const replaceAllWithUndo = (next: TravelLocation[], message: string) => {
+    const snapshot = locations;
+    setLocations(next);
+    setSelectedId(null);
+    setNavTargetId(null);
+    showToast(message, { actionLabel: 'Hoàn tác', onAction: () => setLocations(snapshot) });
+  };
+
+  const handleClearVisited = () => {
+    if (visitedCount === 0) return;
+    setConfirm({
+      title: 'Xóa các điểm đã đi?',
+      message: `${visitedCount} địa điểm đã đánh dấu "Đã đi" sẽ được xóa khỏi danh sách.`,
+      tone: 'danger',
+      confirmLabel: `Xóa ${visitedCount} điểm`,
+      onConfirm: () =>
+        replaceAllWithUndo(
+          locations.filter((l) => !l.visited),
+          `Đã dọn ${visitedCount} điểm đã đi`
+        ),
+    });
+  };
+
+  const handleResetData = () => {
+    setConfirm({
+      title: 'Khôi phục dữ liệu mẫu?',
+      message: 'Danh sách hiện tại sẽ được thay bằng 8 địa danh tiêu biểu của Việt Nam. Bạn vẫn có thể hoàn tác ngay sau đó.',
+      tone: 'warning',
+      confirmLabel: 'Khôi phục',
+      onConfirm: () => replaceAllWithUndo(DEFAULT_LOCATIONS, 'Đã khôi phục dữ liệu mẫu'),
+    });
+  };
+
+  const handleAddLocation = (details: Omit<TravelLocation, 'id' | 'createdAt'>) => {
     const newLocation: TravelLocation = {
-      ...newLocDetails,
-      id: 'loc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      createdAt: new Date().toISOString()
+      ...details,
+      id: createId('loc'),
+      createdAt: new Date().toISOString(),
     };
-    setLocations(prev => [newLocation, ...prev]);
-    setSelectedLocation(newLocation);
+    setLocations((prev) => [newLocation, ...prev]);
+    setSelectedId(newLocation.id);
     setMapPanTrigger({ lat: newLocation.lat, lng: newLocation.lng, timestamp: Date.now() });
-    // Reset temporary clicks
     setClickedLat(undefined);
     setClickedLng(undefined);
+    showToast(`📍 Đã ghim ${titleOf(newLocation)}`);
   };
 
-  // Update inline travel notes (Ghi chú cá nhân)
-  const handleUpdateNotes = (id: string, updatedText: string) => {
-    setLocations(prev =>
-      prev.map(loc => (loc.id === id ? { ...loc, notes: updatedText } : loc))
-    );
-    if (selectedLocation?.id === id) {
-      setSelectedLocation(prev => prev ? { ...prev, notes: updatedText } : null);
-    }
+  const handleUpdateNotes = (id: string, notes: string) => {
+    setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, notes } : l)));
+    showToast('Đã lưu ghi chú');
   };
 
-  // Map Double-click handle to pre-fill latitude and longitude coordinates
+  const handleSaveEdit = (updated: TravelLocation) => {
+    setLocations((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    setEditingId(null);
+    showToast('Đã cập nhật địa điểm');
+  };
+
+  const handleCopyCoords = async (loc: TravelLocation) => {
+    const ok = await copyText(`${loc.lat}, ${loc.lng}`);
+    showToast(ok ? 'Đã sao chép tọa độ' : 'Không sao chép được tọa độ', { tone: ok ? 'success' : 'error' });
+  };
+
   const handleMapClick = (lat: number, lng: number) => {
     setClickedLat(lat);
     setClickedLng(lng);
     setIsAddOpen(true);
   };
 
-  // Reset standard database mapping (completely iframe safe)
-  const handleResetData = () => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Khôi phục bản đồ mẫu',
-      message: 'Bạn có chắn chắn muốn khôi phục lại 8 địa danh chuẩn tiêu biểu trải dài đất nước Việt Nam? Toàn bộ các địa điểm tự ghim hiện tại của bạn sẽ bị thay thế hoàn toàn.',
-      type: 'warning',
-      onConfirm: () => {
-        setLocations(DEFAULT_LOCATIONS);
-        setSelectedLocation(null);
-        setConfirmDialog(null);
-      }
-    });
+  const openAdd = () => {
+    setClickedLat(undefined);
+    setClickedLng(undefined);
+    setIsAddOpen(true);
   };
 
-  // Printable vector view triggers browser print.
-  const handlePrintPDF = () => {
-    window.print();
+  const handleOpenShare = () => {
+    try {
+      const serialized = btoa(unescape(encodeURIComponent(JSON.stringify(locations))));
+      setShareUrl(`${window.location.origin}${window.location.pathname}?itinerary=${serialized}`);
+      setIsShareOpen(true);
+    } catch (e) {
+      console.error(e);
+      showToast('Không tạo được liên kết chia sẻ', { tone: 'error' });
+    }
   };
 
-  // Export the whole itinerary as a CSV file the user can save to Files/iCloud
-  const handleExportCSV = () => {
-    const lines = [
-      CSV_HEADERS.join(','),
-      ...locations.map(loc =>
-        CSV_HEADERS.map(h => csvEscape((loc as Record<string, unknown>)[h])).join(',')
-      ),
-    ];
-    // Prepend a BOM so Excel/Numbers read Vietnamese accents correctly
-    const csv = '﻿' + lines.join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+  const handleExportCSV = async () => {
     const dateTag = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cam-on-nhe-lich-trinh-${dateTag}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const result = await saveFile(
+      `cam-on-nhe-lich-trinh-${dateTag}.csv`,
+      locationsToCSV(locations),
+      'text/csv;charset=utf-8'
+    );
+    if (result === 'downloaded') showToast(`Đã lưu ${locations.length} địa điểm ra file CSV`);
+    if (result === 'shared') showToast('Đã gửi file CSV — chọn “Lưu vào Tệp” để cất vào iCloud');
   };
 
-  // Read a CSV file chosen by the user and load it into the itinerary
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Reset the input so re-selecting the same file still fires onChange
-    e.target.value = '';
+    e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = () => {
+      let imported: TravelLocation[];
       try {
-        let text = String(reader.result || '');
-        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-        const rows = parseCSV(text).filter(r => r.some(cell => cell.trim() !== ''));
-        if (rows.length < 2) throw new Error('empty');
-
-        const headers = rows[0].map(h => h.trim());
-        const col = (name: string) => headers.indexOf(name);
-
-        const fallbackImage =
-          'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&q=80&w=600';
-
-        const imported: TravelLocation[] = rows.slice(1).map((r, i) => {
-          const get = (name: string) => {
-            const j = col(name);
-            return j >= 0 && j < r.length ? r[j].trim() : '';
-          };
-          const lat = parseFloat(get('lat'));
-          const lng = parseFloat(get('lng'));
-          const plannedDate = get('plannedDate');
-          return {
-            id: get('id') || `csv_${Date.now()}_${i}`,
-            name: get('name') || 'Địa điểm chưa đặt tên',
-            region: get('region') || 'Miền Bắc',
-            image: get('image') || fallbackImage,
-            lat,
-            lng,
-            visited: get('visited').toLowerCase() === 'true',
-            notes: get('notes'),
-            plannedDate: plannedDate || undefined,
-            createdAt: get('createdAt') || new Date().toISOString(),
-          };
-        }).filter(loc => !isNaN(loc.lat) && !isNaN(loc.lng));
-
-        if (imported.length === 0) throw new Error('no valid rows');
-
-        setConfirmDialog({
-          isOpen: true,
-          title: 'Nhập lịch trình từ CSV',
-          message: `Đã đọc được ${imported.length} địa điểm từ tệp "${file.name}". Bạn muốn thay thế toàn bộ lịch trình hiện tại bằng dữ liệu này?`,
-          type: 'warning',
-          onConfirm: () => {
-            setLocations(imported);
-            setSelectedLocation(null);
-            setNavTarget(null);
-            setConfirmDialog(null);
-          },
+        imported = locationsFromCSV(String(reader.result || ''));
+      } catch {
+        setConfirm({
+          title: 'Không đọc được file CSV',
+          message: 'File chưa đúng định dạng. Hãy dùng file đã lưu từ ứng dụng này (cần có các cột name, lat, lng).',
+          tone: 'warning',
+          alertOnly: true,
         });
-      } catch (err) {
-        setAlertDialog({
-          isOpen: true,
-          title: 'Không đọc được tệp CSV',
-          message:
-            'Tệp không đúng định dạng. Hãy dùng tệp CSV đã xuất từ ứng dụng này (cần có cột name, lat, lng).',
-        });
+        return;
       }
+      setConfirm({
+        title: 'Mở file CSV',
+        message: (
+          <>
+            Tìm thấy <b>{imported.length} địa điểm</b> trong “{file.name}”. Gộp vào danh sách hiện tại hay thay thế toàn bộ?
+          </>
+        ),
+        tone: 'info',
+        confirmLabel: 'Gộp thêm',
+        secondaryLabel: 'Thay thế toàn bộ',
+        onConfirm: () => {
+          const { merged, added } = mergeLocations(locations, imported);
+          replaceAllWithUndo(merged, added ? `Đã gộp thêm ${added} địa điểm mới` : 'Không có địa điểm mới — tất cả đã có sẵn');
+        },
+        onSecondary: () => replaceAllWithUndo(imported, `Đã nạp ${imported.length} địa điểm từ file`),
+      });
     };
     reader.readAsText(file, 'UTF-8');
   };
 
-  // Filter & Search computation with Accent-Insensitive Vietnamese support
-  const filteredLocations = locations.filter(loc => {
-    const matchesRegion = regionFilter === 'Tất cả' || loc.region === regionFilter;
-    
-    // Apply accent reduction before keyword mapping
-    const plainName = removeVietnameseTones(loc.name).toLowerCase();
-    const plainNotes = removeVietnameseTones(loc.notes || '').toLowerCase();
-    const plainSearch = removeVietnameseTones(searchTerm).toLowerCase();
+  const handleSharedImport = (mode: 'merge' | 'replace') => {
+    if (!sharedItineraryToImport) return;
+    const incoming = sharedItineraryToImport.map((loc) => ({ ...loc, createdAt: loc.createdAt || new Date().toISOString() }));
+    setSharedItineraryToImport(null);
+    if (mode === 'merge') {
+      const { merged, added } = mergeLocations(locations, incoming);
+      replaceAllWithUndo(merged, `Đã thêm ${added} địa điểm từ lịch trình được chia sẻ`);
+    } else {
+      replaceAllWithUndo(incoming, `Đã nhập ${incoming.length} địa điểm được chia sẻ`);
+    }
+    if (incoming[0]) {
+      setSelectedId(incoming[0].id);
+      setMapPanTrigger({ lat: incoming[0].lat, lng: incoming[0].lng, timestamp: Date.now() });
+    }
+  };
 
-    const matchesSearch = plainName.includes(plainSearch) || plainNotes.includes(plainSearch);
-    return matchesRegion && matchesSearch;
+  const openTools = (anchor: DOMRect | null) => {
+    setToolsAnchor(anchor);
+    setToolsOpen(true);
+  };
+
+  // ------------------------------------------------------------- render
+  const itemProps = (loc: TravelLocation) => ({
+    location: loc,
+    isSelected: selectedId === loc.id,
+    distanceKm: distances[loc.id],
+    onSelect: () => handleSelect(loc),
+    onNavigate: () => handleNavigate(loc),
+    onToggleVisited: () => handleToggleVisited(loc.id),
+    onEdit: () => setEditingId(loc.id),
+    onDelete: () => handleDelete(loc.id),
+    onCopyCoords: () => handleCopyCoords(loc),
+    onUpdateNotes: (notes: string) => handleUpdateNotes(loc.id, notes),
   });
 
-  // Achievement statistics
-  const totalLocations = locations.length;
-  const visitedLocations = locations.filter(l => l.visited).length;
-  const completedPercent = totalLocations > 0 ? Math.round((visitedLocations / totalLocations) * 105 / 105 * 100) : 0;
+  const chipButton =
+    'inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition';
 
   return (
-    <div className="min-h-screen bg-orange-50/10 text-slate-850 dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-100">
-      
-      {/* Shared Itinerary Import Overlay Notification Banner - Material style */}
+    <div className="min-h-screen text-slate-900 dark:text-slate-100">
+      {/* Shared itinerary banner */}
       <AnimatePresence>
         {sharedItineraryToImport && (
           <motion.div
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
-            className="fixed top-4 left-4 right-4 z-[99999] max-w-2xl mx-auto bg-indigo-650 bg-indigo-600 text-white p-5 rounded-2xl border border-indigo-500 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4"
+            className="fixed top-3 inset-x-3 z-[99999] max-w-2xl mx-auto rounded-3xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 p-4 shadow-2xl print:hidden"
           >
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🧭</span>
-              <div>
-                <h4 className="text-xs font-black uppercase text-yellow-300">PHÁT HIỆN LỊCH TRÌNH CHIA SẺ!</h4>
-                <p className="text-[10px] text-indigo-200 mt-0.5 font-sans">
-                  Bạn nhận được danh sách gồm <b>{sharedItineraryToImport.length} địa danh</b> từ người quen. Bạn có muốn nhập danh sách này không?
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 w-10 h-10 rounded-2xl bg-linear-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center">
+                <Share2 className="w-5 h-5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold">Bạn nhận được một lịch trình!</p>
+                <p className="text-xs opacity-75 mt-0.5">
+                  Gồm {sharedItineraryToImport.length} địa danh từ người quen. Thêm vào bản đồ của bạn nhé?
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleSharedImport('merge')}
+                    className="h-9 px-3.5 rounded-xl text-sm font-semibold bg-indigo-500 hover:bg-indigo-400 text-white transition"
+                  >
+                    Thêm vào của tôi
+                  </button>
+                  <button
+                    onClick={() => handleSharedImport('replace')}
+                    className="h-9 px-3.5 rounded-xl text-sm font-semibold bg-white/10 hover:bg-white/20 dark:bg-slate-100 dark:hover:bg-slate-200 transition"
+                  >
+                    Thay thế toàn bộ
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
               <button
                 onClick={() => setSharedItineraryToImport(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold cursor-pointer transition"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center opacity-70 hover:opacity-100 hover:bg-white/10 dark:hover:bg-slate-100 transition"
+                aria-label="Bỏ qua"
               >
-                BỎ QUA
-              </button>
-              <button
-                onClick={handleConfirmImport}
-                className="px-4 py-1.5 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-slate-950 text-[10px] font-bold cursor-pointer transition"
-              >
-                NHẬP NGAY
+                <X className="w-4 h-4" />
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Main Container */}
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 space-y-8 print:p-0 print:max-w-full">
-        
-        {/* Navigation & Header Panel */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-6 print:hidden select-none">
-          
-          {/* Logo Title */}
-          <div className="flex items-center gap-3">
-            <span className="p-3 bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105 transition duration-155 rounded-2xl shadow-md cursor-pointer flex items-center justify-center shrink-0">
-              <Smile className="w-5.5 h-5.5 shrink-0" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">
-                  Cảm ơn Nhé 😊
-                </h1>
-                <span className="bg-yellow-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider font-mono shadow-sm">
-                  MAP CHINH PHỤC
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-xs text-slate-550 text-slate-550 text-slate-500 dark:text-slate-400 font-sans font-medium">
-                ✦ GHIM CÁC ĐỊA DANH KÝ ỨC, KHÁM PHÁ DANH LAM VIỆT NAM HOÀN TOÀN MIỄN PHÍ
-              </p>
-            </div>
-          </div>
+      <AppHeader
+        isDarkMode={isDarkMode}
+        onToggleDark={() => setIsDarkMode((d) => !d)}
+        onOpenTools={(rect) => openTools(rect)}
+        onAdd={openAdd}
+        toolsOpen={toolsOpen}
+      />
 
-          {/* Action buttons on utility bar */}
-          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end font-sans">
-            
-            {/* Dark mode toggler button */}
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-750 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase cursor-pointer"
-              title="Chuyển chế độ sáng/tối"
-              id="theme-toggler"
-            >
-              {isDarkMode ? '☀ Sáng' : '🌙 Tối'}
-            </button>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-28 lg:pb-12 space-y-5 sm:space-y-6 print:p-0 print:max-w-full">
+        <StatsHero locations={locations} distances={distances} onSelect={handleSelect} onAdd={openAdd} />
 
-            {/* Set sample default trigger buttons */}
-            <button
-              onClick={handleResetData}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:text-slate-350 text-slate-700 hover:text-indigo-600 dark:bg-slate-900 dark:hover:bg-slate-800 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
-              title="Khôi phục lại dữ liệu mẫu"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-indigo-650 text-indigo-600 dark:text-indigo-405 text-indigo-600" />
-              <span>KHÔI PHỤC</span>
-            </button>
-
-            {/* Print out PDF */}
-            <button
-              onClick={handlePrintPDF}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
-              title="Xuất bản in PDF"
-              id="print-pdf-btn"
-            >
-              <Download className="w-3.5 h-3.5 text-indigo-500" />
-              <span>XUẤT PDF</span>
-            </button>
-
-            {/* Save itinerary to a CSV file (for Files / iCloud) */}
-            <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
-              title="Lưu toàn bộ lịch trình ra tệp CSV (có thể lưu vào Files / iCloud)"
-              id="export-csv-btn"
-            >
-              <Save className="w-3.5 h-3.5 text-sky-500" />
-              <span>LƯU CSV</span>
-            </button>
-
-            {/* Load itinerary from a CSV file */}
-            <button
-              onClick={() => csvInputRef.current?.click()}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
-              title="Tải lịch trình từ tệp CSV đã lưu"
-              id="import-csv-btn"
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-500" />
-              <span>TẢI CSV</span>
-            </button>
-            <input
-              ref={csvInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleImportCSV}
-              className="hidden"
-            />
-
-            {/* Social Share triggered buttons */}
-            <button
-              onClick={handleOpenShare}
-              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-full bg-white hover:bg-slate-50 text-slate-705 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-200 transition text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer"
-              title="Chia sẻ lộ trình này"
-              id="share-btn"
-            >
-              <Share2 className="w-3.5 h-3.5 text-emerald-505 text-emerald-500" />
-              <span>CHIA SẺ</span>
-            </button>
-
-            {/* Master Add Location button */}
-            <button
-              onClick={() => {
-                setClickedLat(undefined);
-                setClickedLng(undefined);
-                setIsAddOpen(true);
-              }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black flex items-center gap-1.5 rounded-full shadow-sm cursor-pointer active:scale-95 transition"
-              id="master-add-location-btn"
-            >
-              <Plus className="w-4 h-4 text-white shrink-0" />
-              <span>THÊM ĐỊA DANH</span>
-            </button>
-
-          </div>
-        </header>
-
-        {/* PRINT-ONLY HEADER BANNER FOR PDF */}
-        <div className="hidden print:block mb-8 text-center border-b-3 border-black pb-4">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase font-mono mb-1">
-            BẢN ĐỒ HÀNH TRÌNH DU LỊCH CÁ NHÂN
+        {/* Print-only heading */}
+        <div className="hidden print:block mb-6 text-center border-b-2 border-slate-300 pb-4">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase mb-1">
+            Bản đồ hành trình du lịch cá nhân
           </h1>
-          <p className="text-xs text-slate-550 text-slate-500 font-mono">
-            Tài liệu số hóa lưu trữ lịch trình danh lam thắng cảnh Việt Nam
-          </p>
-          <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600 font-mono">
-            <span>Tổng cộng: <b>{totalLocations} địa điểm</b></span>
-            <span>Đã chinh phục: <b>{visitedLocations} địa điểm ({completedPercent}%)</b></span>
-            <span>Ngày kết xuất: <b>{new Date().toLocaleDateString('vi-VN')}</b></span>
+          <p className="text-xs text-slate-500">Cảm ơn Nhé — lịch trình danh lam thắng cảnh</p>
+          <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600">
+            <span>Tổng cộng: <b>{counts.all} địa điểm</b></span>
+            <span>Đã chinh phục: <b>{counts.done} ({completedPercent}%)</b></span>
+            <span>Ngày xuất: <b>{new Date().toLocaleDateString('vi-VN')}</b></span>
           </div>
         </div>
 
-        {/* Dashboard Statistics & Analytics Board */}
-        <section className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-150 dark:border-slate-800/80 shadow-sm print:hidden select-none">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
-            
-            {/* Progress bar visual ring text */}
-            <div className="md:col-span-2 flex items-center gap-4">
-              <div className="relative shrink-0 flex items-center justify-center bg-yellow-105 bg-yellow-100 dark:bg-yellow-950/20 rounded-2xl p-3 text-yellow-700 shadow-sm">
-                <Award className="w-6 h-6 animate-pulse" />
-              </div>
-
-              <div className="space-y-1.5 w-full font-sans">
-                <span className="text-[8.5px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">📊 TIẾN ĐỘ CHINH PHỤC</span>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-850 dark:text-slate-100 uppercase">
-                    CHINH PHỤC: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{completedPercent}%</span>
-                  </h4>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                    {visitedLocations} / {totalLocations} HOÀN THÀNH
-                  </span>
+        {/* grid-cols-1 (minmax(0,1fr)) stops wide rows like the chip scroller from blowing out the column on phones */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+          {/* ---------------- Map (right & sticky on desktop) ---------------- */}
+          <section id="ban-do" className="lg:col-span-7 lg:order-2 lg:sticky lg:top-20 print:hidden">
+            <div className="rounded-3xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/70 dark:ring-slate-800 shadow-sm p-2 sm:p-2.5">
+              <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2.5">
+                <div className="min-w-0">
+                  <h2 className="flex items-center gap-2 text-[15px] font-bold text-slate-900 dark:text-white">
+                    <MapIcon className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
+                    Bản đồ
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {selectedLocation ? `Đang xem: ${titleOf(selectedLocation)}` : 'Chạm vào bản đồ để ghim điểm mới'}
+                  </p>
                 </div>
-                {/* Visual Progress bar container */}
-                <div className="w-full bg-slate-100 dark:bg-slate-850 h-3.5 rounded-full overflow-hidden relative border border-slate-150/20 dark:border-slate-800">
-                  <motion.div
-                    className="h-full bg-emerald-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${completedPercent}%` }}
-                    transition={{ duration: 0.3 }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Stat badges details column 2 */}
-            <div className="grid grid-cols-2 gap-4 col-span-1 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800/80 md:pl-6 pt-4 md:pt-0 font-sans">
-              <div className="space-y-0.5">
-                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase block tracking-wider">ĐANG LÊN KẾ HOẠCH</span>
-                <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 uppercase">
-                  <span className="w-3.5 h-3.5 bg-yellow-405 bg-yellow-400 rounded-full inline-block shadow-sm"></span>
-                  <span>{totalLocations - visitedLocations} ĐIỂM</span>
-                </p>
-              </div>
-
-              <div className="space-y-0.5">
-                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase block tracking-wider">ĐÃ ĐẶT CHÂN ĐẾN</span>
-                <p className="text-xs font-bold text-slate-950 dark:text-white flex items-center gap-1.5 uppercase">
-                  <span className="w-3.5 h-3.5 bg-emerald-500 rounded-full inline-block shadow-sm"></span>
-                  <span>{visitedLocations} ĐIỂM</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Quick cleaning action panel column 3 */}
-            <div className="flex flex-col items-stretch justify-center md:items-end col-span-1 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800/80 md:pl-6">
-              <div className="space-y-1.5 w-full md:text-right font-sans">
-                <span className="text-[8px] text-slate-450 dark:text-slate-500 font-black uppercase tracking-wider block">CÔNG CỤ NỔI BẬT</span>
-                
-                {/* "Clear checked" button to delete ALL items that are visited */}
-                <button
-                  onClick={handleClearVisited}
-                  disabled={visitedLocations === 0}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-rose-50/80 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-500 text-[10px] font-extrabold uppercase rounded-full cursor-pointer disabled:opacity-45 disabled:pointer-events-none transition shadow-sm"
-                  title="Dọn dẹp và xóa các điểm đã hoàn thành chuyến đi"
-                  id="clear-visited-btn"
-                >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>XÓA ĐIỂM ĐÃ ĐI ({visitedLocations})</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </section>
-
-        {/* Dashboard Interactive Main Content Grid panel */}
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* LEFT PANEL COLUMN (Map Widget Box) */}
-          <div className="lg:col-span-12 xl:col-span-12 space-y-6 print:hidden">
-            
-            {/* Live active Leaflet map box widget with Google layer */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-4 rounded-3xl shadow-sm space-y-4">
-              <div className="flex items-center justify-between text-[11px] font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest select-none font-mono">
-                <span className="flex items-center gap-1.5 font-sans">
-                  <MapIcon className="w-4 h-4 text-indigo-600" />
-                  BẢN ĐỒ VIỆT NAM (TỔNG HỢP GỢI Ý REALTIME)
-                </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {selectedLocation && (
-                    <button
-                      onClick={() => {
-                        setSelectedLocation(null);
-                      }}
-                      className="text-[9px] font-bold border border-slate-205 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition"
-                    >
-                      [-] TIÊU CỰ CHUNG
+                    <button onClick={() => setSelectedId(null)} className={chipButton}>
+                      <X className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Bỏ chọn</span>
                     </button>
                   )}
-                  <button
-                    onClick={() => setIsMapFullscreen(true)}
-                    className="flex items-center gap-1 text-[9px] font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full uppercase cursor-pointer transition hover:bg-slate-100 dark:hover:bg-slate-700"
-                    title="Phóng to bản đồ toàn màn hình"
-                  >
-                    <Maximize2 className="w-3 h-3" /> Toàn màn hình
+                  <button onClick={() => setIsMapFullscreen(true)} className={chipButton} title="Phóng to bản đồ toàn màn hình">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    Toàn màn hình
                   </button>
                 </div>
               </div>
 
-              {/* Subdued message box helper */}
               <div
                 className={
                   isMapFullscreen
                     ? 'fixed inset-0 z-[9999] overflow-hidden bg-white dark:bg-slate-950'
-                    : 'h-[380px] md:h-[480px] rounded-2xl overflow-hidden relative border border-slate-100 dark:border-slate-800/60 shadow-inner'
+                    : 'relative h-[56vh] min-h-[340px] max-h-[540px] lg:h-[calc(100vh-11rem)] lg:min-h-[420px] lg:max-h-none rounded-2xl overflow-hidden'
                 }
               >
                 {isMapFullscreen && (
                   <button
                     onClick={() => setIsMapFullscreen(false)}
-                    className="absolute top-3 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-900 text-white px-3.5 py-1.5 rounded-full shadow-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition backdrop-blur"
+                    className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-900 text-white h-9 px-4 rounded-full shadow-lg text-xs font-semibold backdrop-blur transition"
                     title="Thu nhỏ bản đồ (ESC)"
                   >
                     <Minimize2 className="w-3.5 h-3.5" /> Thu nhỏ bản đồ
@@ -784,7 +582,7 @@ export default function App() {
                   locations={filteredLocations}
                   selectedLocation={selectedLocation}
                   onSelectLocation={(loc) => {
-                    setSelectedLocation(loc);
+                    setSelectedId(loc.id);
                     setMapPanTrigger({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() });
                   }}
                   onMapClick={handleMapClick}
@@ -793,203 +591,193 @@ export default function App() {
                   userLng={userLng}
                   mapPanTrigger={mapPanTrigger}
                   navTarget={navTarget}
-                  onStopNavigation={() => setNavTarget(null)}
+                  onStopNavigation={() => setNavTargetId(null)}
                 />
               </div>
+            </div>
+          </section>
 
-              <span className="text-[8.5px] text-slate-450 dark:text-slate-550 dark:text-slate-500 block leading-tight text-center select-none uppercase font-semibold font-mono tracking-wider">
-                📌 CLICK VÀO BẤT CỨ ĐIỂM NÀO TRÊN BẢN ĐỒ ĐỂ DÒ TÌM, GỢI Ý VÀ GHIM HOÀN TOÀN TỰ ĐỘNG!
-              </span>
+          {/* ---------------- List (left on desktop) ---------------- */}
+          <section id="dia-diem" className="lg:col-span-5 lg:order-1 space-y-3.5 print:col-span-12">
+            <div className="flex items-end justify-between gap-3 px-1 print:hidden">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Địa điểm của bạn</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {hasActiveFilters
+                    ? `Hiển thị ${filteredLocations.length}/${counts.all} địa điểm`
+                    : `${counts.all} địa điểm · ${counts.done} đã đi`}
+                </p>
+              </div>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition"
+                >
+                  Xóa bộ lọc
+                </button>
+              )}
             </div>
 
-          </div>
+            <FilterBar
+              search={search}
+              onSearch={setSearch}
+              status={status}
+              onStatus={setStatus}
+              region={region}
+              onRegion={setRegion}
+              sort={sort}
+              onSort={setSort}
+              view={view}
+              onView={setView}
+              counts={counts}
+              regionCounts={regionCounts}
+              hasGps={hasGps}
+            />
 
-          {/* RIGHT PANEL COLUMN (Filtered search bar and Locations List grid) */}
-          <div className="lg:col-span-12 xl:col-span-12 space-y-6 print:col-span-12">
-            
-            {/* Filter and search bar controls header */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-5 rounded-3xl shadow-sm space-y-4 print:hidden select-none">
-              
-              {/* Region and Area selection filtering (bộ lọc theo khu vực) */}
-              <div className="space-y-1.5">
-                <label className="text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">
-                  <Filter className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>BỘ LỌC KHU VỰC ĐỊA LÝ:</span>
-                </label>
-                
-                {/* Horizontal chips selection list */}
-                <div className="flex flex-wrap gap-2 pt-0.5">
-                  {(['Tất cả', 'Miền Bắc', 'Miền Trung', 'Miền Nam', 'Nước ngoài'] as Region[]).map(reg => (
+            <div className="print:hidden">
+              {locations.length === 0 ? (
+                <div className="rounded-3xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/70 dark:ring-slate-800 px-6 py-10 text-center">
+                  <div className="mx-auto w-16 h-16 rounded-3xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-3xl">
+                    🗺️
+                  </div>
+                  <h3 className="mt-4 text-base font-bold text-slate-900 dark:text-white">Chưa có địa điểm nào</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                    Chạm vào bản đồ, tìm kiếm hoặc bấm “Thêm địa điểm” để bắt đầu hành trình của bạn.
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
                     <button
-                      key={reg}
-                      onClick={() => setRegionFilter(reg)}
-                      className={`px-3.5 py-1.5 transition text-[10.5px] uppercase font-bold rounded-full cursor-pointer ${
-                        regionFilter === reg
-                          ? 'bg-indigo-650 bg-indigo-600 text-white shadow-sm font-extrabold'
-                          : 'bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                      }`}
-                      id={`filter-${reg}`}
+                      onClick={openAdd}
+                      className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl text-sm font-semibold text-white bg-linear-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-600/25"
                     >
-                      {reg}
+                      <Plus className="w-4 h-4" /> Thêm địa điểm
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Keyword text search box */}
-              <div className="space-y-1.5">
-                <label className="text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">
-                  <Search className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>TÌM KIẾM THEO TÊN (HỖ TRỢ KHÔNG DẤU):</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Gõ nhanh tên danh thắng hoặc nội dung ghi chú để tra cứu..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-4.5 px-4 py-2.5 rounded-full border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-850 dark:text-white text-xs font-semibold bg-slate-50 transition"
-                  />
-                  {searchTerm && (
-                    <button
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-3.5 top-2 py-1 px-3 text-[9px] font-black bg-rose-50 hover:bg-rose-100 text-rose-500 hover:text-rose-600 dark:bg-rose-950/20 rounded-full cursor-pointer transition uppercase"
-                    >
-                      XÓA
+                    <button onClick={() => replaceAllWithUndo(DEFAULT_LOCATIONS, 'Đã nạp dữ liệu mẫu')} className={`${chipButton} h-10 text-sm`}>
+                      <RotateCcw className="w-4 h-4" /> Dùng dữ liệu mẫu
                     </button>
-                  )}
+                    <button onClick={() => csvInputRef.current?.click()} className={`${chipButton} h-10 text-sm`}>
+                      <FolderOpen className="w-4 h-4" /> Mở file CSV
+                    </button>
+                  </div>
                 </div>
-              </div>
-              
-              {/* Highlight statistics metrics of current filters search results */}
-              <div className="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-wider uppercase">
-                <span>
-                  ĐANG HIỂN THỊ: <b>{filteredLocations.length}</b> ĐỊA DANH / <b>{totalLocations}</b> TỔNG SỐ
-                </span>
-                {selectedLocation && (
-                  <span>
-                    MỤC TIÊU PIN: <b>{selectedLocation.name.toUpperCase()}</b>
-                  </span>
-                )}
-              </div>
-
-            </div>
-
-            {/* Travel Items grids cards lists */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 print:grid-cols-2">
-              <AnimatePresence mode="popLayout">
-                {filteredLocations.length > 0 ? (
-                  filteredLocations.map(loc => (
-                    <LocationCard
-                      key={loc.id}
-                      location={loc}
-                      isSelected={selectedLocation?.id === loc.id}
-                      onSelect={() => {
-                        setSelectedLocation(loc);
-                        setMapPanTrigger({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() });
-                      }}
-                      onNavigate={() => {
-                        setSelectedLocation(loc);
-                        setNavTarget(loc);
-                      }}
-                      onToggleVisited={() => handleToggleVisited(loc.id)}
-                      onDelete={() => handleDeleteLocation(loc.id)}
-                      onUpdateNotes={(txt) => handleUpdateNotes(loc.id, txt)}
-                    />
-                  ))
-                ) : (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="col-span-full py-16 text-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-3xl p-8 space-y-4 shadow-sm"
+              ) : filteredLocations.length === 0 ? (
+                <div className="rounded-3xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/70 dark:ring-slate-800 px-6 py-10 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                    <SearchX className="w-7 h-7" />
+                  </div>
+                  <h3 className="mt-4 text-base font-bold text-slate-900 dark:text-white">Không tìm thấy địa điểm phù hợp</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Thử từ khóa khác (gõ có dấu hay không dấu đều được) hoặc bỏ bớt bộ lọc.</p>
+                  <button
+                    onClick={clearFilters}
+                    className="mt-4 h-10 px-4 rounded-xl text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 transition"
                   >
-                    <div className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-400 dark:text-slate-500">
-                      <AlertCircle className="w-8 h-8" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Không tìm thấy địa điểm phù hợp</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">
-                        Thử nhập từ khóa khác, tìm gõ có dấu/không dấu hoặc lọc lại khu vực khác!
-                      </p>
-                    </div>
-                    {searchTerm && (
-                      <button
-                        onClick={() => { setSearchTerm(''); setRegionFilter('Tất cả'); }}
-                        className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-xl transition cursor-pointer"
-                      >
-                        Hiển thị hoàn toàn bộ
-                      </button>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    Xóa bộ lọc
+                  </button>
+                </div>
+              ) : view === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2 gap-4">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {filteredLocations.map((loc) => (
+                      <LocationCard key={loc.id} {...itemProps(loc)} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {filteredLocations.map((loc) => (
+                      <LocationRow key={loc.id} {...itemProps(loc)} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
 
-            {/* PRINT-ONLY SIMPLE TEXT-MAP DATA LIST */}
-            <div className="hidden print:block w-full mt-10">
-              <h2 className="text-lg font-bold uppercase tracking-wider text-slate-800 border-b pb-2 mb-4">
-                DANH SÁCH CHI TIẾT CÁC ĐỊA ĐIỂM HÀNH TRÌNH
+            {/* Print-only table */}
+            <div className="hidden print:block w-full mt-6">
+              <h2 className="text-base font-bold uppercase tracking-wider text-slate-800 border-b pb-2 mb-4">
+                Danh sách chi tiết các địa điểm
               </h2>
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="border-b text-slate-600 font-bold bg-slate-50">
                     <th className="py-2.5 px-2">STT</th>
-                    <th className="py-2.5 px-2">Tên Danh Thắng</th>
-                    <th className="py-2.5 px-2">Vùng Miền</th>
-                    <th className="py-2.5 px-2">Trạng Thái</th>
+                    <th className="py-2.5 px-2">Tên danh thắng</th>
+                    <th className="py-2.5 px-2">Vùng miền</th>
+                    <th className="py-2.5 px-2">Trạng thái</th>
                     <th className="py-2.5 px-2">Kế hoạch</th>
-                    <th className="py-2.5 px-2">Ghi chú cá nhân</th>
+                    <th className="py-2.5 px-2">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody>
                   {locations.map((loc, idx) => (
-                    <tr key={loc.id} className="border-b text-slate-800">
+                    <tr key={loc.id} className="border-b text-slate-800 break-inside-avoid">
                       <td className="py-3 px-2 font-mono font-bold">{idx + 1}</td>
                       <td className="py-3 px-2 font-bold">{loc.name}</td>
                       <td className="py-3 px-2 font-bold text-indigo-700">{loc.region}</td>
                       <td className="py-3 px-2">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${loc.visited ? 'bg-emerald-100 text-emerald-800' : 'bg-orange-100 text-orange-800'}`}>
-                          {loc.visited ? 'ĐÃ HOÀN THÀNH' : 'ĐỊNH GHÉ THĂM'}
+                          {loc.visited ? 'Đã đi' : 'Chưa đi'}
                         </span>
                       </td>
-                      <td className="py-3 px-2 font-mono">{loc.plannedDate ? loc.plannedDate : '---'}</td>
-                      <td className="py-3 px-2 italic text-slate-600 max-w-xs break-words">{loc.notes ? loc.notes : '---'}</td>
+                      <td className="py-3 px-2 whitespace-nowrap">{formatDateVi(loc.plannedDate) || '—'}</td>
+                      <td className="py-3 px-2 italic text-slate-600 max-w-xs break-words">{loc.notes || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="mt-8 text-[11px] text-slate-400 text-center font-mono select-none">
+              <p className="mt-8 text-[11px] text-slate-400 text-center">
                 Cảm ơn bạn đã sử dụng Cảm ơn Nhé. Chúc bạn có những chặng đường tuyệt vời!
-              </div>
+              </p>
             </div>
+          </section>
+        </div>
 
-          </div>
-
-        </section>
-
-        {/* Intro Message and Local Storage Confirmation Footer */}
-        <footer className="pt-6 border-t border-slate-150 dark:border-slate-900 select-none print:hidden">
-          <div className="max-w-2xl mx-auto bg-gradient-to-r from-indigo-50 to-indigo-50/30 dark:from-indigo-950/20 dark:to-slate-900 p-6 rounded-2xl border border-indigo-100/50 dark:border-indigo-900/40 text-center space-y-3">
-            <h3 className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Thư gửi từ người kiến tạo
-            </h3>
-            <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed italic">
+        {/* Footer */}
+        <footer className="pt-2 print:hidden">
+          <div className="rounded-3xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/70 dark:ring-slate-800 px-5 py-6 sm:px-8 text-center">
+            <span className="mx-auto w-10 h-10 rounded-2xl bg-linear-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
+              <Sparkles className="w-5 h-5" />
+            </span>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-400">
+              Thư gửi từ người kiến tạo
+            </p>
+            <p className="mt-2 text-sm italic text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
               "Xin chào, Tôi là Trung tôi thích du lịch nên đã tạo ra Bản đồ cá nhân này, Hoàn toàn miễn phí nhé. &lt;3"
             </p>
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 leading-normal bg-white/60 dark:bg-slate-950/40 py-1.5 px-3 rounded-xl inline-block border border-slate-200/50 dark:border-slate-800/40">
-              💾 <b>Dữ liệu ngoại tuyến:</b> Toàn bộ bản đồ mẫu, các điểm lưu mới, ghi chú cá nhân của bạn sẽ được tự động lưu trữ tức thì và bảo mật hoàn toàn trong bộ nhớ máy (<b>Local Storage</b>) - hoạt động mượt mà trên tất cả các loại thiết bị (máy tính, máy tính bảng, điện thoại di động).
-            </div>
+            <p className="mt-3 text-xs text-slate-400 dark:text-slate-500 max-w-md mx-auto leading-relaxed">
+              💾 Mọi địa điểm và ghi chú được lưu ngay trên thiết bị của bạn — dùng mượt trên máy tính, máy tính bảng và điện thoại.
+            </p>
           </div>
-          
-          <div className="mt-8 text-center text-[10px] text-slate-400 dark:text-slate-500 font-mono tracking-wide">
-            CẢM ƠN NHÉ © 2026. KIẾN TẠO VỚI TỐI GIẢN & SỰ TIỆN LỢI CHI TIẾT.
-          </div>
+          <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
+            Cảm ơn Nhé © 2026 · Kiến tạo với sự tối giản & tiện lợi
+          </p>
         </footer>
+      </main>
 
-      </div>
+      <BottomNav
+        active={activeSection}
+        onNavigate={scrollToSection}
+        onAdd={openAdd}
+        onOpenTools={() => openTools(null)}
+        toolsOpen={toolsOpen}
+      />
 
-      {/* Drawer modal elements dynamically added */}
+      <ToolsMenu
+        open={toolsOpen}
+        anchor={toolsAnchor}
+        onClose={() => setToolsOpen(false)}
+        visitedCount={visitedCount}
+        totalCount={counts.all}
+        onExportCSV={handleExportCSV}
+        onImportCSV={() => csvInputRef.current?.click()}
+        onPrint={() => window.print()}
+        onShare={handleOpenShare}
+        onClearVisited={handleClearVisited}
+        onReset={handleResetData}
+      />
+
+      <input ref={csvInputRef} type="file" accept=".csv,text/csv" onChange={handleImportCSV} className="hidden" />
+
       <AddLocationModal
         isOpen={isAddOpen}
         onClose={() => setIsAddOpen(false)}
@@ -997,96 +785,31 @@ export default function App() {
         initialLat={clickedLat}
         initialLng={clickedLng}
         isDarkMode={isDarkMode}
+        hasGps={hasGps}
+        onUseMyLocation={() => {
+          if (userLat === undefined || userLng === undefined) return;
+          setClickedLat(userLat);
+          setClickedLng(userLng);
+        }}
+        onPickOnMap={() => {
+          setIsAddOpen(false);
+          scrollToSection('ban-do');
+          showToast('Chạm vào bản đồ tại nơi bạn muốn ghim', { tone: 'info' });
+        }}
       />
 
-      <ShareModal
-        isOpen={isShareOpen}
-        onClose={() => setIsShareOpen(false)}
-        shareUrl={shareUrl}
+      <EditLocationModal
+        location={editingLocation}
+        onClose={() => setEditingId(null)}
+        onSave={handleSaveEdit}
+        onDelete={handleDelete}
       />
 
-      {/* Sleek Custom Alert Dialog Modal Overlay (Strict layout constraints & mobile friendly) */}
-      <AnimatePresence>
-        {alertDialog && (
-          <div className="fixed inset-0 z-[110000] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800"
-            >
-              <div className="flex items-center gap-3 text-indigo-600 mb-4">
-                <Sparkles className="w-6 h-6 animate-pulse" />
-                <h3 className="text-base font-extrabold tracking-tight dark:text-white">
-                  {alertDialog.title}
-                </h3>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed mb-6">
-                {alertDialog.message}
-              </p>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setAlertDialog(null)}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
-                >
-                  Đồng ý
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <ShareModal isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} shareUrl={shareUrl} />
 
-      {/* Sleek Custom Confirmation Multi-Option Dialog Overlay */}
-      <AnimatePresence>
-        {confirmDialog && confirmDialog.isOpen && (
-          <div className="fixed inset-0 z-[110000] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800"
-            >
-              <div className="flex items-center gap-3 mb-4">
-                <div className={`p-2.5 rounded-xl ${
-                  confirmDialog.type === 'danger'
-                    ? 'bg-rose-50 text-rose-500 dark:bg-rose-950/20'
-                    : 'bg-amber-50 text-amber-500 dark:bg-amber-950/20'
-                }`}>
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-extrabold tracking-tight dark:text-white">
-                  {confirmDialog.title}
-                </h3>
-              </div>
-              
-              <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed mb-6">
-                {confirmDialog.message}
-              </p>
+      <ConfirmDialog options={confirm} onClose={() => setConfirm(null)} />
 
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setConfirmDialog(null)}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl transition cursor-pointer"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  onClick={confirmDialog.onConfirm}
-                  className={`px-5 py-2.5 text-white text-xs font-bold rounded-xl transition cursor-pointer ${
-                    confirmDialog.type === 'danger'
-                      ? 'bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/10'
-                      : 'bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-600/10'
-                  }`}
-                >
-                  Chấp nhận
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
+      <Toaster toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
