@@ -152,7 +152,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const tileLayerRef = useRef<L.LayerGroup | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const tempMarkerRef = useRef<L.Marker | null>(null);
 
@@ -338,29 +338,46 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       tileLayerRef.current.remove();
     }
 
-    let tileUrl = '';
-    let attribution = '';
+    // Key-free tile providers only. The unofficial Google tile endpoint
+    // (mt1.google.com/vt) now answers with "API key required" tiles.
+    const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    const CARTO = `${OSM} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
+    const layers: L.TileLayer[] = [];
 
     if (mapType === 'dark') {
-      tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-      attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+      layers.push(L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: CARTO, maxZoom: 19 }));
     } else if (mapType === 'hybrid') {
-      // High resolution, lag-free Google hybrid satellite map with clear labels
-      tileUrl = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-      attribution = '&copy; Google Maps';
+      // Esri satellite imagery + CARTO place labels on top
+      layers.push(
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Ảnh vệ tinh &copy; Esri, Maxar, Earthstar Geographics',
+          maxZoom: 19,
+          maxNativeZoom: 18,
+        }),
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+          attribution: CARTO,
+          maxZoom: 19,
+          pane: 'overlayPane',
+        })
+      );
     } else {
-      // High resolution, lag-free Google standard roadmap (very fast and clear!)
-      tileUrl = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
-      attribution = '&copy; Google Maps';
+      layers.push(L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: CARTO, maxZoom: 19 }));
     }
 
-    const tiles = L.tileLayer(tileUrl, {
-      attribution,
-      maxZoom: 19,
+    // If the main provider keeps failing (blocked network, outage), fall back to OpenStreetMap
+    let errors = 0;
+    let fellBack = false;
+    const group = L.layerGroup(layers);
+    layers[0].on('tileerror', () => {
+      errors += 1;
+      if (fellBack || errors < 6 || !mapRef.current) return;
+      fellBack = true;
+      group.clearLayers();
+      group.addLayer(L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: OSM, maxZoom: 19 }));
     });
 
-    tiles.addTo(mapRef.current);
-    tileLayerRef.current = tiles;
+    group.addTo(mapRef.current);
+    tileLayerRef.current = group;
   }, [mapType]);
 
   // Update Markers when locations or selection changes
