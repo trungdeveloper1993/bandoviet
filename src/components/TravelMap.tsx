@@ -117,6 +117,9 @@ function stepEmoji(step: any): string {
   return '⬆️';
 }
 
+type MapType = 'roadmap' | 'hybrid' | 'osm';
+const MAP_TYPE_KEY = 'cam_on_nhe_map_type';
+
 interface RouteInfo {
   distance: number;
   duration: number;
@@ -173,7 +176,15 @@ export const TravelMap: React.FC<TravelMapProps> = ({
   }, [navTarget?.id]);
 
   // Set default map type: roadmap, hybrid satellite, or dark mode
-  const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'dark'>(isDarkMode ? 'dark' : 'roadmap');
+  const [mapType, setMapType] = useState<MapType>(() => {
+    try {
+      const saved = localStorage.getItem(MAP_TYPE_KEY);
+      if (saved === 'roadmap' || saved === 'hybrid' || saved === 'osm') return saved;
+    } catch {
+      // ignore unreadable storage
+    }
+    return 'roadmap';
+  });
   const [layersOpen, setLayersOpen] = useState(false);
 
   // Search states for local and online Nominatim inquiries
@@ -288,10 +299,14 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     };
   }, []); // Run once on mount
 
-  // Sync dark mode state to map type representation
+  // Remember the chosen base map, so a source that works on this device sticks
   useEffect(() => {
-    setMapType(isDarkMode ? 'dark' : 'roadmap');
-  }, [isDarkMode]);
+    try {
+      localStorage.setItem(MAP_TYPE_KEY, mapType);
+    } catch {
+      // storage unavailable — choice just won't persist
+    }
+  }, [mapType]);
 
   // Recentre only when a *different* place gets selected — editing notes or
   // ticking "Đã đi" on the current one must not make the map jump.
@@ -338,17 +353,23 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       tileLayerRef.current.remove();
     }
 
-    // Key-free tile providers only. The unofficial Google tile endpoint
-    // (mt1.google.com/vt) now answers with "API key required" tiles.
+    // Key-free tile providers only (no Google tiles, no separate dark provider:
+    // dark mode reuses the light tiles with a CSS filter, see .map-dark).
     const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
     const CARTO = `${OSM} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
-    const layers: L.TileLayer[] = [];
+    const osmLayer = () =>
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: OSM, maxZoom: 19 });
+    const cartoLayer = () =>
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: CARTO,
+        maxZoom: 19,
+      });
 
-    if (mapType === 'dark') {
-      layers.push(L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: CARTO, maxZoom: 19 }));
-    } else if (mapType === 'hybrid') {
+    let layers: L.TileLayer[];
+    let fallback: () => L.TileLayer;
+    if (mapType === 'hybrid') {
       // Esri satellite imagery + CARTO place labels on top
-      layers.push(
+      layers = [
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           attribution: 'Ảnh vệ tinh &copy; Esri, Maxar, Earthstar Geographics',
           maxZoom: 19,
@@ -358,13 +379,18 @@ export const TravelMap: React.FC<TravelMapProps> = ({
           attribution: CARTO,
           maxZoom: 19,
           pane: 'overlayPane',
-        })
-      );
+        }),
+      ];
+      fallback = osmLayer;
+    } else if (mapType === 'osm') {
+      layers = [osmLayer()];
+      fallback = cartoLayer;
     } else {
-      layers.push(L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: CARTO, maxZoom: 19 }));
+      layers = [cartoLayer()];
+      fallback = osmLayer;
     }
 
-    // If the main provider keeps failing (blocked network, outage), fall back to OpenStreetMap
+    // If the chosen provider keeps failing (blocked network, outage), switch to the other one
     let errors = 0;
     let fellBack = false;
     const group = L.layerGroup(layers);
@@ -373,7 +399,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
       if (fellBack || errors < 6 || !mapRef.current) return;
       fellBack = true;
       group.clearLayers();
-      group.addLayer(L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: OSM, maxZoom: 19 }));
+      group.addLayer(fallback());
     });
 
     group.addTo(mapRef.current);
@@ -481,10 +507,10 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     }
   };
 
-  const MAP_TYPES: { key: 'roadmap' | 'hybrid' | 'dark'; label: string; swatch: string }[] = [
+  const MAP_TYPES: { key: MapType; label: string; swatch: string }[] = [
     { key: 'roadmap', label: 'Bản đồ', swatch: 'bg-linear-to-br from-emerald-200 via-sky-100 to-amber-100' },
     { key: 'hybrid', label: 'Vệ tinh', swatch: 'bg-linear-to-br from-emerald-800 via-green-700 to-sky-800' },
-    { key: 'dark', label: 'Tối', swatch: 'bg-linear-to-br from-slate-700 via-slate-800 to-slate-950' },
+    { key: 'osm', label: 'OSM', swatch: 'bg-linear-to-br from-orange-100 via-lime-100 to-sky-200' },
   ];
 
   // Realtime turn-by-turn routing: draw the road route from the live GPS
@@ -630,7 +656,11 @@ export const TravelMap: React.FC<TravelMapProps> = ({
 
   return (
     // `isolate` keeps Leaflet's high z-indexes inside the map so they never cover the sticky header
-    <div className="relative isolate w-full h-full overflow-hidden select-none">
+    <div
+      className={`relative isolate w-full h-full overflow-hidden select-none ${
+        isDarkMode && mapType !== 'hybrid' ? 'map-dark' : ''
+      }`}
+    >
       <div ref={mapContainerRef} className="w-full h-full" />
 
       {/* Layer switcher (below Leaflet's zoom buttons) */}

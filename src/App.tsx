@@ -751,6 +751,9 @@ export default function App() {
           <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
             Cảm ơn Nhé © 2026 · Kiến tạo với sự tối giản & tiện lợi
           </p>
+          <p className="mt-1 text-center text-[11px] text-slate-400/80 dark:text-slate-600" id="app-version">
+            Phiên bản {__APP_VERSION__}
+          </p>
         </footer>
       </main>
 

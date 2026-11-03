@@ -125,6 +125,12 @@ pre, code, .font-mono {
   background: #0f172a;
 }
 
+/* Dark map = the same light tiles, inverted. Avoids depending on a separate
+   dark tile provider; only the tiles are filtered, markers keep their colours. */
+.map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+
 /* Bulletproof styles to prevent tile misalignments and layout drift under Tailwind */
 .leaflet-pane,
 .leaflet-tile,
