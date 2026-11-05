@@ -1,0 +1,93 @@
+name: Diagnose map tiles
+
+# Temporary diagnostic: runs only when this file changes on the claude/* working
+# branch. Probes each tile provider and screenshots the live site, then commits
+# the results to probe-results/ on the same branch.
+on:
+  push:
+    branches: ['claude/affectionate-keller-ll0Py']
+    paths: ['.github/workflows/diagnose-tiles.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe tile endpoints
+        run: |
+          set +e
+          mkdir -p probe-results
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+          REF='https://trungdeveloper1993.github.io/'
+          while read -r name url; do
+            [ -z "$name" ] && continue
+            out=$(curl -sS -L --max-time 20 -o "probe-results/$name" -D "probe-results/$name.headers" \
+              -w '%{http_code} | %{content_type} | %{size_download} bytes' -A "$UA" -e "$REF" "$url" 2>&1)
+            echo "$name | $out | $url" | tee -a probe-results/summary.txt
+          done <<'EOF'
+          carto_voyager_z5.png https://a.basemaps.cartocdn.com/rastertiles/voyager/5/25/14.png
+          carto_voyager_z13.png https://a.basemaps.cartocdn.com/rastertiles/voyager/13/6504/3606.png
+          carto_voyager_z13_2x.png https://b.basemaps.cartocdn.com/rastertiles/voyager/13/6504/3606@2x.png
+          carto_light_z13.png https://a.basemaps.cartocdn.com/light_all/13/6504/3606.png
+          carto_dark_z13.png https://a.basemaps.cartocdn.com/dark_all/13/6504/3606.png
+          carto_labels_z13.png https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/13/6504/3606.png
+          osm_z5.png https://tile.openstreetmap.org/5/25/14.png
+          osm_z13.png https://tile.openstreetmap.org/13/6504/3606.png
+          esri_imagery_z13.jpg https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/13/3606/6504
+          esri_street_z13.jpg https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/13/3606/6504
+          esri_labels_z13.png https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/13/3606/6504
+          google_m_z13.png https://mt1.google.com/vt/lyrs=m&x=6504&y=3606&z=13
+          google_y_z13.jpg https://mt1.google.com/vt/lyrs=y&x=6504&y=3606&z=13
+          EOF
+          echo "--- CORS header check ---" | tee -a probe-results/summary.txt
+          grep -il 'access-control-allow-origin' probe-results/*.headers | tee -a probe-results/summary.txt
+
+      - name: Screenshot the live site
+        run: |
+          set +e
+          npm init -y >/dev/null
+          npm i playwright@1.56.1 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+          cat > shot.cjs <<'EOF'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          (async () => {
+            const browser = await chromium.launch();
+            const url = 'https://trungdeveloper1993.github.io/bandoviet/';
+            const cases = [
+              ['desktop-light', { viewport: { width: 1440, height: 900 }, colorScheme: 'light' }],
+              ['desktop-dark', { viewport: { width: 1440, height: 900 }, colorScheme: 'dark' }],
+              ['mobile-light', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, colorScheme: 'light' }],
+            ];
+            for (const [name, opts] of cases) {
+              const ctx = await browser.newContext(opts);
+              const page = await ctx.newPage();
+              const log = [];
+              const isTile = (u) => /basemaps|openstreetmap|arcgisonline|google\.com\/vt/.test(u);
+              page.on('response', (r) => { if (isTile(r.url())) log.push(`${r.status()} ${r.headers()['content-type'] || ''} ${r.url()}`); });
+              page.on('requestfailed', (r) => { if (isTile(r.url())) log.push(`FAILED ${r.failure() && r.failure().errorText} ${r.url()}`); });
+              page.on('console', (m) => { if (m.type() === 'error') log.push('console: ' + m.text()); });
+              await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch((e) => log.push('goto: ' + e.message));
+              await page.evaluate(() => document.getElementById('ban-do') && document.getElementById('ban-do').scrollIntoView());
+              await page.waitForTimeout(6000);
+              await page.screenshot({ path: `probe-results/site-${name}.png` });
+              const version = await page.locator('#app-version').innerText().catch(() => 'n/a');
+              fs.writeFileSync(`probe-results/site-${name}.log`, [`version: ${version}`, ...log.slice(0, 60)].join('\n'));
+              await ctx.close();
+            }
+            await browser.close();
+          })();
+          EOF
+          node shot.cjs
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898309+github-actions[bot]@users.noreply.github.com"
+          git add probe-results
+          git commit -m "chore: map tile probe results [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
