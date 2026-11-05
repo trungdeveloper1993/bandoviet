@@ -1,0 +1,15 @@
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Length: 42643
+Connection: keep-alive
+Date: Thu, 05 Nov 2026 15:44:45 GMT
+Server: Apache
+ETag: "0eui0n9lued48"
+Cache-Control: max-age=86400
+Access-Control-Allow-Origin: *
+X-Robots-Tag: noindex
+X-Cache: Miss from cloudfront
+Via: 1.1 be8b43f893825967d3e4c649e583b4a0.cloudfront.net (CloudFront)
+X-Amz-Cf-Pop: IAD61-P13
+X-Amz-Cf-Id: Ivz0OqTgCotDM7A6hRgEMXBF6HpKa5hoCrzbTwPxV2RDEqS4Hu__lA==
+
