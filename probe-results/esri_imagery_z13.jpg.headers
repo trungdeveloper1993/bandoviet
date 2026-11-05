@@ -1,0 +1,15 @@
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Length: 18356
+Connection: keep-alive
+Date: Thu, 05 Nov 2026 15:49:36 GMT
+Server: Apache
+ETag: "8uudotvvn4suf"
+Cache-Control: max-age=86400
+Access-Control-Allow-Origin: *
+X-Robots-Tag: noindex
+X-Cache: Miss from cloudfront
+Via: 1.1 4afe778f0baeb7737453d69ea98d4744.cloudfront.net (CloudFront)
+X-Amz-Cf-Pop: ORD56-P16
+X-Amz-Cf-Id: tMP6yvoIMrLUQ6717jKaNu79HalZW11ZzaGN13AUoRNEHX6msMykyw==
+

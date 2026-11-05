@@ -1,0 +1,17 @@
+HTTP/2 200 
+server: Varnish
+retry-after: 0
+content-type: image/png
+cache-control: public, max-age=2592000, immutable
+access-control-allow-origin: *
+etag: "wm-da89c20e77c1-light"
+accept-ranges: bytes
+date: Thu, 05 Nov 2026 15:49:35 GMT
+via: 1.1 varnish
+x-served-by: cache-chi-kmdw8640067-CHI
+x-cache: HIT
+x-cache-hits: 0
+x-timer: S1793893776.823918,VS0,VE0
+strict-transport-security: max-age=63072000; includeSubdomains
+content-length: 2049
+

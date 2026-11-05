@@ -1,0 +1,30 @@
+carto_voyager_z5.png | 200 | image/png | 2049 bytes | https://a.basemaps.cartocdn.com/rastertiles/voyager/5/25/14.png
+carto_voyager_z13.png | 200 | image/png | 2049 bytes | https://a.basemaps.cartocdn.com/rastertiles/voyager/13/6504/3606.png
+carto_voyager_z13_2x.png | 200 | image/png | 2049 bytes | https://b.basemaps.cartocdn.com/rastertiles/voyager/13/6504/3606@2x.png
+carto_light_z13.png | 200 | image/png | 2049 bytes | https://a.basemaps.cartocdn.com/light_all/13/6504/3606.png
+carto_dark_z13.png | 200 | image/png | 2513 bytes | https://a.basemaps.cartocdn.com/dark_all/13/6504/3606.png
+carto_labels_z13.png | 200 | image/png | 2398 bytes | https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/13/6504/3606.png
+osm_z5.png | 200 | image/png | 30086 bytes | https://tile.openstreetmap.org/5/25/14.png
+osm_z13.png | 200 | image/png | 39982 bytes | https://tile.openstreetmap.org/13/6504/3606.png
+esri_imagery_z13.jpg | 200 | image/jpeg | 18356 bytes | https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/13/3606/6504
+esri_street_z13.jpg | 200 | image/jpeg | 42643 bytes | https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/13/3606/6504
+esri_labels_z13.png | 200 | image/png | 12290 bytes | https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/13/3606/6504
+google_m_z13.png | 200 | image/png | 27981 bytes | https://mt1.google.com/vt/lyrs=m&x=6504&y=3606&z=13
+google_y_z13.jpg | 200 | image/jpeg | 30295 bytes | https://mt1.google.com/vt/lyrs=y&x=6504&y=3606&z=13
+--- CARTO without Referer ---
+carto_voyager_noref | 200 | image/png | 2049 bytes
+carto_dark_noref | 200 | image/png | 2513 bytes
+--- CORS header check ---
+probe-results/carto_dark_z13.png.headers
+probe-results/carto_labels_z13.png.headers
+probe-results/carto_light_z13.png.headers
+probe-results/carto_voyager_z13.png.headers
+probe-results/carto_voyager_z13_2x.png.headers
+probe-results/carto_voyager_z5.png.headers
+probe-results/esri_imagery_z13.jpg.headers
+probe-results/esri_labels_z13.png.headers
+probe-results/esri_street_z13.jpg.headers
+probe-results/google_m_z13.png.headers
+probe-results/google_y_z13.jpg.headers
+probe-results/osm_z13.png.headers
+probe-results/osm_z5.png.headers

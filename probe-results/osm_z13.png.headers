@@ -1,0 +1,22 @@
+HTTP/2 200 
+server: Apache
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+access-control-allow-origin: *
+access-control-allow-methods: GET, HEAD, OPTIONS
+access-control-allow-headers: X-Requested-With
+x-tilerender: palulukon.openstreetmap.org
+etag: "b75e0320ea4637675935657b0acbf67a"
+cache-control: max-age=89558, stale-while-revalidate=604800, stale-if-error=604800
+expires: Fri, 06 Nov 2026 03:18:45 GMT
+content-type: image/png
+accept-ranges: bytes
+age: 48209
+date: Thu, 05 Nov 2026 15:49:36 GMT
+via: 1.1 varnish
+x-served-by: cache-chi-kmdw8640037-CHI
+x-cache: HIT
+x-cache-hits: 0
+x-timer: S1793893776.321422,VS0,VE1
+alt-svc: h3=":443";ma=86400,h3-29=":443";ma=86400,h3-27=":443";ma=86400
+content-length: 39982
+
