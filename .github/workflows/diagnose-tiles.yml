@@ -50,6 +50,8 @@ jobs:
           grep -il 'access-control-allow-origin' probe-results/*.headers | tee -a probe-results/summary.txt
 
       - name: Screenshot the live site
+        env:
+          EXPECT_VERSION: '6127d9e'
         run: |
           set +e
           npm init -y >/dev/null
@@ -64,6 +66,7 @@ jobs:
               ['desktop-light', { viewport: { width: 1440, height: 900 }, colorScheme: 'light' }],
               ['desktop-dark', { viewport: { width: 1440, height: 900 }, colorScheme: 'dark' }],
               ['mobile-light', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, colorScheme: 'light' }],
+              ['mobile-dark', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, colorScheme: 'dark' }],
             ];
             for (const [name, opts] of cases) {
               const ctx = await browser.newContext(opts);
@@ -73,7 +76,12 @@ jobs:
               page.on('response', (r) => { if (isTile(r.url())) log.push(`${r.status()} ${r.headers()['content-type'] || ''} ${r.url()}`); });
               page.on('requestfailed', (r) => { if (isTile(r.url())) log.push(`FAILED ${r.failure() && r.failure().errorText} ${r.url()}`); });
               page.on('console', (m) => { if (m.type() === 'error') log.push('console: ' + m.text()); });
-              await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch((e) => log.push('goto: ' + e.message));
+              for (let attempt = 0; attempt < 40; attempt++) {
+                await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch((e) => log.push('goto: ' + e.message));
+                const v = await page.locator('#app-version').innerText().catch(() => '');
+                if (v.includes(process.env.EXPECT_VERSION || '')) break;
+                await page.waitForTimeout(10000);
+              }
               await page.evaluate(() => document.getElementById('ban-do') && document.getElementById('ban-do').scrollIntoView());
               await page.waitForTimeout(6000);
               await page.screenshot({ path: `probe-results/site-${name}.png` });
@@ -92,5 +100,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898309+github-actions[bot]@users.noreply.github.com"
           git add probe-results
-          git commit -m "chore: map tile probe results [skip ci]"
+          git commit -m "chore: map tile probe results (live 6127d9e) [skip ci]"
           git push origin "HEAD:${GITHUB_REF_NAME}"
