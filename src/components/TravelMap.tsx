@@ -117,8 +117,97 @@ function stepEmoji(step: any): string {
   return '⬆️';
 }
 
-type MapType = 'roadmap' | 'hybrid' | 'osm';
+// ---------------------------------------------------------------------------
+// Base maps — only key-free sources verified to return real tiles.
+// (CARTO now answers every tile with the same ~2 KB placeholder image and a
+// 200 status, so it is no longer used.)
+// ---------------------------------------------------------------------------
+type MapType = 'roadmap' | 'street' | 'hybrid';
 const MAP_TYPE_KEY = 'cam_on_nhe_map_type';
+
+const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const ESRI_ATTR = '&copy; Esri';
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+
+interface BaseMap {
+  label: string;
+  swatch: string;
+  /** Apply the CSS dark filter when the app is in dark mode */
+  darkFilter: boolean;
+  /** Where to go if this source fails */
+  fallback: MapType;
+  layers: () => L.TileLayer[];
+  /** Two different land tiles (Hà Nội, TP.HCM) used to health-check the source */
+  probe: [string, string];
+}
+
+const BASE_MAPS: Record<MapType, BaseMap> = {
+  roadmap: {
+    label: 'Bản đồ',
+    swatch: 'bg-linear-to-br from-emerald-200 via-sky-100 to-amber-100',
+    darkFilter: true,
+    fallback: 'street',
+    layers: () => [L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: OSM_ATTR, maxZoom: 19 })],
+    probe: ['https://tile.openstreetmap.org/10/813/450.png', 'https://tile.openstreetmap.org/10/815/481.png'],
+  },
+  street: {
+    label: 'Đường phố',
+    swatch: 'bg-linear-to-br from-orange-100 via-yellow-50 to-sky-200',
+    darkFilter: true,
+    fallback: 'roadmap',
+    layers: () => [
+      L.tileLayer(`${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`, { attribution: ESRI_ATTR, maxZoom: 19 }),
+    ],
+    probe: [`${ESRI}/World_Street_Map/MapServer/tile/10/450/813`, `${ESRI}/World_Street_Map/MapServer/tile/10/481/815`],
+  },
+  hybrid: {
+    label: 'Vệ tinh',
+    swatch: 'bg-linear-to-br from-emerald-800 via-green-700 to-sky-800',
+    darkFilter: false,
+    fallback: 'roadmap',
+    layers: () => [
+      L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
+        attribution: 'Ảnh vệ tinh &copy; Esri, Maxar, Earthstar Geographics',
+        maxZoom: 19,
+        maxNativeZoom: 18,
+      }),
+      // Place names on top of the imagery
+      L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, {
+        maxZoom: 19,
+        maxNativeZoom: 18,
+        pane: 'overlayPane',
+      }),
+    ],
+    probe: [`${ESRI}/World_Imagery/MapServer/tile/10/450/813`, `${ESRI}/World_Imagery/MapServer/tile/10/481/815`],
+  },
+};
+
+/**
+ * 'bad' when the source answers with an HTTP error or with a placeholder image
+ * (every tile identical and tiny, which is how "API key required" tiles look);
+ * 'unknown' on network trouble (offline, blocked) — tile errors handle that case.
+ */
+async function probeBaseMap(urls: [string, string]): Promise<'ok' | 'bad' | 'unknown'> {
+  const sizeOf = async (url: string): Promise<number | 'http-error'> => {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+      if (!res.ok || !(res.headers.get('content-type') || '').startsWith('image/')) return 'http-error';
+      return (await res.blob()).size;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+  try {
+    const [a, b] = await Promise.all(urls.map(sizeOf));
+    if (a === 'http-error' || b === 'http-error') return 'bad';
+    if (a === b && a < 6000) return 'bad';
+    return 'ok';
+  } catch {
+    return 'unknown';
+  }
+}
 
 interface RouteInfo {
   distance: number;
@@ -175,17 +264,19 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     setNavCollapsed(false);
   }, [navTarget?.id]);
 
-  // Set default map type: roadmap, hybrid satellite, or dark mode
+  // Base map choice, remembered per device ('osm' was the old name of 'roadmap')
   const [mapType, setMapType] = useState<MapType>(() => {
     try {
       const saved = localStorage.getItem(MAP_TYPE_KEY);
-      if (saved === 'roadmap' || saved === 'hybrid' || saved === 'osm') return saved;
+      if (saved === 'street' || saved === 'hybrid') return saved;
     } catch {
       // ignore unreadable storage
     }
     return 'roadmap';
   });
   const [layersOpen, setLayersOpen] = useState(false);
+  const [mapNotice, setMapNotice] = useState<string | null>(null);
+  const failedMapsRef = useRef(new Set<MapType>());
 
   // Search states for local and online Nominatim inquiries
   const [searchQuery, setSearchQuery] = useState('');
@@ -345,66 +436,57 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     return () => clearTimeout(timer);
   }, [locations, mapType]);
 
-  // React to mapType / layer updates by mounting specific tile servers
+  // Mount the chosen base map, then make sure it really works: if the source
+  // answers with error/placeholder tiles (e.g. "API KEY REQUIRED") or keeps
+  // failing to load, switch to the next source and tell the user.
   useEffect(() => {
-    if (!mapRef.current) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    if (tileLayerRef.current) {
-      tileLayerRef.current.remove();
-    }
+    tileLayerRef.current?.remove();
+    const base = BASE_MAPS[mapType];
+    const layers = base.layers();
+    const group = L.layerGroup(layers).addTo(map);
+    tileLayerRef.current = group;
 
-    // Key-free tile providers only (no Google tiles, no separate dark provider:
-    // dark mode reuses the light tiles with a CSS filter, see .map-dark).
-    const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-    const CARTO = `${OSM} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
-    const osmLayer = () =>
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: OSM, maxZoom: 19 });
-    const cartoLayer = () =>
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: CARTO,
-        maxZoom: 19,
-      });
+    let cancelled = false;
+    const switchAway = () => {
+      if (cancelled) return;
+      cancelled = true;
+      failedMapsRef.current.add(mapType);
+      let next = base.fallback;
+      if (failedMapsRef.current.has(next)) {
+        next = (Object.keys(BASE_MAPS) as MapType[]).find((k) => !failedMapsRef.current.has(k)) ?? next;
+      }
+      if (failedMapsRef.current.has(next)) {
+        setMapNotice('Không tải được bản đồ. Hãy kiểm tra kết nối mạng.');
+        return;
+      }
+      setMapNotice(`Nguồn “${base.label}” đang lỗi — đã chuyển sang “${BASE_MAPS[next].label}”.`);
+      setMapType(next);
+    };
 
-    let layers: L.TileLayer[];
-    let fallback: () => L.TileLayer;
-    if (mapType === 'hybrid') {
-      // Esri satellite imagery + CARTO place labels on top
-      layers = [
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-          attribution: 'Ảnh vệ tinh &copy; Esri, Maxar, Earthstar Geographics',
-          maxZoom: 19,
-          maxNativeZoom: 18,
-        }),
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-          attribution: CARTO,
-          maxZoom: 19,
-          pane: 'overlayPane',
-        }),
-      ];
-      fallback = osmLayer;
-    } else if (mapType === 'osm') {
-      layers = [osmLayer()];
-      fallback = cartoLayer;
-    } else {
-      layers = [cartoLayer()];
-      fallback = osmLayer;
-    }
-
-    // If the chosen provider keeps failing (blocked network, outage), switch to the other one
-    let errors = 0;
-    let fellBack = false;
-    const group = L.layerGroup(layers);
+    let tileErrors = 0;
     layers[0].on('tileerror', () => {
-      errors += 1;
-      if (fellBack || errors < 6 || !mapRef.current) return;
-      fellBack = true;
-      group.clearLayers();
-      group.addLayer(fallback());
+      tileErrors += 1;
+      if (tileErrors >= 6) switchAway();
     });
 
-    group.addTo(mapRef.current);
-    tileLayerRef.current = group;
+    probeBaseMap(base.probe).then((result) => {
+      if (result === 'bad') switchAway();
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [mapType]);
+
+  // Auto-hide the source-switch notice
+  useEffect(() => {
+    if (!mapNotice) return;
+    const timer = window.setTimeout(() => setMapNotice(null), 7000);
+    return () => window.clearTimeout(timer);
+  }, [mapNotice]);
 
   // Update Markers when locations or selection changes
   useEffect(() => {
@@ -507,11 +589,11 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     }
   };
 
-  const MAP_TYPES: { key: MapType; label: string; swatch: string }[] = [
-    { key: 'roadmap', label: 'Bản đồ', swatch: 'bg-linear-to-br from-emerald-200 via-sky-100 to-amber-100' },
-    { key: 'hybrid', label: 'Vệ tinh', swatch: 'bg-linear-to-br from-emerald-800 via-green-700 to-sky-800' },
-    { key: 'osm', label: 'OSM', swatch: 'bg-linear-to-br from-orange-100 via-lime-100 to-sky-200' },
-  ];
+  const MAP_TYPES = (Object.keys(BASE_MAPS) as MapType[]).map((key) => ({
+    key,
+    label: BASE_MAPS[key].label,
+    swatch: BASE_MAPS[key].swatch,
+  }));
 
   // Realtime turn-by-turn routing: draw the road route from the live GPS
   // position to the navigation target and refresh it as the user moves.
@@ -658,7 +740,7 @@ export const TravelMap: React.FC<TravelMapProps> = ({
     // `isolate` keeps Leaflet's high z-indexes inside the map so they never cover the sticky header
     <div
       className={`relative isolate w-full h-full overflow-hidden select-none ${
-        isDarkMode && mapType !== 'hybrid' ? 'map-dark' : ''
+        isDarkMode && BASE_MAPS[mapType].darkFilter ? 'map-dark' : ''
       }`}
     >
       <div ref={mapContainerRef} className="w-full h-full" />
@@ -906,6 +988,23 @@ export const TravelMap: React.FC<TravelMapProps> = ({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Shown when a broken map source was swapped automatically */}
+      {mapNotice && (
+        <div
+          role="status"
+          className="absolute top-[54px] right-[10px] z-[1000] max-w-[min(18rem,calc(100%-4.5rem))] flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 text-amber-800 ring-1 ring-amber-200 shadow-lg text-xs font-medium dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-500/30 animate-fade-in"
+        >
+          <span className="flex-1">{mapNotice}</span>
+          <button
+            onClick={() => setMapNotice(null)}
+            className="shrink-0 -mr-1 w-5 h-5 rounded-full flex items-center justify-center hover:bg-amber-100 dark:hover:bg-amber-500/20"
+            aria-label="Đóng thông báo"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {/* Compact legend */}
       {!navTarget && (
